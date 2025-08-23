@@ -14,7 +14,7 @@ function add-empty-line() {
 # ============================== PRIVATE - NAME BUILDER ============================== #
 
 function add-name() {
-  echo "name: tp0-dev" > $COMPOSE_FILENAME
+  echo "name: tp0" > $COMPOSE_FILENAME
 }
 
 # ============================== PRIVATE - SERVICES BUILDER ============================== #
