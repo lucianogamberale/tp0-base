@@ -3,81 +3,99 @@
 # ============================== PRIVATE - UTILS ============================== #
 
 function add-line() {
-  local TEXT_TO_APPEND=$1
-  echo "$TEXT_TO_APPEND" >> $COMPOSE_FILENAME
+  local compose_filename=$1
+  local text=$2
+
+  echo "$text" >> "$compose_filename"
 }
 
 function add-empty-line() {
-  add-line ""
+  local compose_filename=$1
+
+  add-line $compose_filename ""
 }
 
 # ============================== PRIVATE - NAME BUILDER ============================== #
 
 function add-name() {
-  echo "name: tp0" > $COMPOSE_FILENAME
+  local compose_filename=$1
+  
+  echo "name: tp0" > "$compose_filename"
 }
 
 # ============================== PRIVATE - SERVICES BUILDER ============================== #
 
 function add-server-service() {
-  add-line "  server:"
-  add-line "    container_name: server"
-  add-line "    image: server:latest"
-  add-line "    entrypoint: python3 /main.py"
-  add-line "    environment:"
-  add-line "      - PYTHONUNBUFFERED=1"
-  add-line "      - LOGGING_LEVEL=DEBUG"
-  add-line "    networks:"
-  add-line "      - testing_net"
+  local compose_filename=$1
+
+  add-line $compose_filename "  server:"
+  add-line $compose_filename "    container_name: server"
+  add-line $compose_filename "    image: server:latest"
+  add-line $compose_filename "    entrypoint: python3 /main.py"
+  add-line $compose_filename "    environment:"
+  add-line $compose_filename "      - PYTHONUNBUFFERED=1"
+  add-line $compose_filename "      - LOGGING_LEVEL=DEBUG"
+  add-line $compose_filename "    networks:"
+  add-line $compose_filename "      - testing_net"
 }
 
 function add-client-service() {
-  local CLIENT_ID=$1
+  local compose_filename=$1
+  local client_id=$2
 
-  add-line "  client$CLIENT_ID:"
-  add-line "    container_name: client$CLIENT_ID"
-  add-line "    image: client:latest"
-  add-line "    entrypoint: /client"
-  add-line "    environment:"
-  add-line "      - CLI_ID=$CLIENT_ID"
-  add-line "      - CLI_LOG_LEVEL=DEBUG"
-  add-line "    networks:"
-  add-line "      - testing_net"
-  add-line "    depends_on:"
-  add-line "      - server"
+  add-line $compose_filename "  client$client_id:"
+  add-line $compose_filename "    container_name: client$client_id"
+  add-line $compose_filename "    image: client:latest"
+  add-line $compose_filename "    entrypoint: /client"
+  add-line $compose_filename "    environment:"
+  add-line $compose_filename "      - CLI_ID=$client_id"
+  add-line $compose_filename "      - CLI_LOG_LEVEL=DEBUG"
+  add-line $compose_filename "    networks:"
+  add-line $compose_filename "      - testing_net"
+  add-line $compose_filename "    depends_on:"
+  add-line $compose_filename "      - server"
 }
 
 function add-services() {
-  add-line "services:"
-  add-server-service
-  for (( i=1; i<=CLIENTS_AMOUNT; i++ )); do
-    add-empty-line
-    add-client-service $i
+  local compose_filename=$1
+
+  add-line $compose_filename "services:"
+
+  add-server-service $compose_filename
+  
+  for (( i=1; i<=clients_amount; i++ )); do
+    add-empty-line $compose_filename
+    add-client-service $compose_filename $i
   done
 }
 
 # ============================== PRIVATE - NETWORKS BUILDER ============================== #
 
 function add-networks() {
-  add-line "networks:"
-  add-line "  testing_net:"
-  add-line "    ipam:"
-  add-line "      driver: default"
-  add-line "      config:"
-  add-line "        - subnet: 172.25.125.0/24"
+  local compose_filename=$1
+
+  add-line $compose_filename "networks:"
+  add-line $compose_filename "  testing_net:"
+  add-line $compose_filename "    ipam:"
+  add-line $compose_filename "      driver: default"
+  add-line $compose_filename "      config:"
+  add-line $compose_filename "        - subnet: 172.25.125.0/24"
 }
 
 # ============================== PRIVATE - DOCKER COMPOSE FILE BUILDER ============================== #
 
 function build-docker-compose-file() {
-  echo "Generando archivo $COMPOSE_FILENAME con $CLIENTS_AMOUNT cliente(s) ..."
-  
-  add-name
-  add-services
-  add-empty-line
-  add-networks
+  local compose_filename=$1
+  local clients_amount=$2
 
-  echo "Generando archivo $COMPOSE_FILENAME con $CLIENTS_AMOUNT cliente(s) [DONE]"
+  echo "Generando archivo $compose_filename con $clients_amount cliente(s) ..."
+  
+  add-name $compose_filename
+  add-services $compose_filename $clients_amount
+  add-empty-line $compose_filename
+  add-networks $compose_filename
+
+  echo "Generando archivo $compose_filename con $clients_amount cliente(s) [DONE]"
 }
 
 # ============================== MAIN ============================== #
@@ -88,15 +106,15 @@ if [ $# -ne 2 ]; then
   exit 1
 fi
 
-COMPOSE_FILENAME=$1
-CLIENTS_AMOUNT=$2
+compose_filename_param=$1
+clients_amount_param=$2
 
-if ! [[ "$CLIENTS_AMOUNT" =~ ^[0-9]+$ ]] || [ "$CLIENTS_AMOUNT" -lt 1 ]; then
+if ! [[ "$clients_amount_param" =~ ^[0-9]+$ ]] || [ "$clients_amount_param" -lt 1 ]; then
   echo "Error: La cantidad de clientes debe ser un entero positivo."
   exit 1
 fi
 
-echo "Nombre del archivo de salida: $COMPOSE_FILENAME"
-echo "Cantidad de clientes: $CLIENTS_AMOUNT"
+echo "Nombre del archivo de salida: $compose_filename_param"
+echo "Cantidad de clientes: $clients_amount_param"
 
-build-docker-compose-file
+build-docker-compose-file $compose_filename_param $clients_amount_param
