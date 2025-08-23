@@ -19,7 +19,7 @@ function add-name() {
 
 # ============================== PRIVATE - SERVICES BUILDER ============================== #
 
-function add-server() {
+function add-server-service() {
   add-line "  server:"
   add-line "    container_name: server"
   add-line "    image: server:latest"
@@ -31,7 +31,7 @@ function add-server() {
   add-line "      - testing_net"
 }
 
-function add-client() {
+function add-client-service() {
   local CLIENT_ID=$1
 
   add-line "  client$CLIENT_ID:"
@@ -49,10 +49,10 @@ function add-client() {
 
 function add-services() {
   add-line "services:"
-  add-server
+  add-server-service
   for (( i=1; i<=CLIENTS_AMOUNT; i++ )); do
     add-empty-line
-    add-client $i
+    add-client-service $i
   done
 }
 
