@@ -95,7 +95,7 @@ function build-docker-compose-file() {
   add-empty-line $compose_filename
   add-networks $compose_filename
 
-  echo "Generando archivo $compose_filename con $clients_amount cliente(s) [DONE]"
+  echo "Generando archivo $compose_filename con $clients_amount cliente(s) ... [DONE]"
 }
 
 # ============================== MAIN ============================== #
