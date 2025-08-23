@@ -62,7 +62,7 @@ function add-networks() {
   add-line "networks:"
   add-line "  testing_net:"
   add-line "    ipam:"
-  add-line "      driver:"
+  add-line "      driver: default"
   add-line "      config:"
   add-line "        - subnet: 172.25.125.0/24"
 }
