@@ -37,6 +37,11 @@ function add-server-service() {
   add-line $compose_filename "      - LOGGING_LEVEL=DEBUG"
   add-line $compose_filename "    networks:"
   add-line $compose_filename "      - testing_net"
+  add-line $compose_filename "    volumes:"
+  add-line $compose_filename "      - type: bind"
+  add-line $compose_filename "        source: ./server/config.ini"
+  add-line $compose_filename "        target: /config.ini"
+  add-line $compose_filename "        read_only: true"
 }
 
 function add-client-service() {
@@ -52,6 +57,11 @@ function add-client-service() {
   add-line $compose_filename "      - CLI_LOG_LEVEL=DEBUG"
   add-line $compose_filename "    networks:"
   add-line $compose_filename "      - testing_net"
+  add-line $compose_filename "    volumes:"
+  add-line $compose_filename "      - type: bind"
+  add-line $compose_filename "        source: ./client/config.yaml"
+  add-line $compose_filename "        target: /config.yaml"
+  add-line $compose_filename "        read_only: true"
   add-line $compose_filename "    depends_on:"
   add-line $compose_filename "      - server"
 }
