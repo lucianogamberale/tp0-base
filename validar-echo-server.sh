@@ -1,19 +1,14 @@
 #!/bin/sh
 
+image_tag='netcat-echo-sv-tester:latest'
+service_name='netcat-echo-sv-tester'
 network_name='tp0_testing_net'
-service_name='nc-test_echo_server'
-alpine_image='alpine:3.22'
+script_name='netcat-echo-sv-test.sh'
 
-message="[TEST ECHO SERVER] Message"
+docker build --tag=$image_tag ./netcat-echo-sv-tester
 
-docker run -dit --name=$service_name --network=$network_name $alpine_image sh
-
-reply=$(docker exec $service_name sh -c "echo '$message' | nc server 12345")
-if [ "$reply" = "$message" ]; then
-    docker exec $service_name sh -c "echo 'action: test_echo_server | result: success'"
-else
-    docker exec $service_name sh -c "echo 'action: test_echo_server | result: fail'"
-fi
-
-docker stop $service_name
-docker rm $service_name
+docker run \
+    --rm \
+    --name=$service_name \
+    --network=$network_name \
+    "$image_tag" sh -c "./$script_name"
