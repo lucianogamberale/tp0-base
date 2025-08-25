@@ -36,90 +36,90 @@ func NewClient(config ClientConfig) *Client {
 	return client
 }
 
-func (c *Client) sigtermSignalHandler() {
-	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", c.config.ID)
+func (client *Client) sigtermSignalHandler() {
+	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
 
-	c.clientRunning = false
+	client.clientRunning = false
 
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
+	if client.conn != nil {
+		client.conn.Close()
+		client.conn = nil
 	}
 
-	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", c.config.ID)
+	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
 
 // CreateClientSocket Initializes client socket. In case of
 // failure, error is printed in stdout/stderr and exit 1
 // is returned
-func (c *Client) createClientSocket() error {
-	conn, err := net.Dial("tcp", c.config.ServerAddress)
+func (client *Client) createClientSocket() error {
+	conn, err := net.Dial("tcp", client.config.ServerAddress)
 	if err != nil {
 		log.Criticalf(
 			"action: connect | result: fail | client_id: %v | error: %v",
-			c.config.ID,
+			client.config.ID,
 			err,
 		)
 	}
-	c.conn = conn
+	client.conn = conn
 	return err
 }
 
-func (c *Client) withNewClientSocketDo(function func()) {
-	if err := c.createClientSocket(); err == nil {
+func (client *Client) withNewClientSocketDo(function func()) {
+	if err := client.createClientSocket(); err == nil {
 		defer func() {
-			c.conn.Close()
-			c.conn = nil
+			client.conn.Close()
+			client.conn = nil
 		}()
 		function()
 	}
 }
 
-func (c *Client) sendMessageAndReceiveReply(msgID int) {
+func (client *Client) sendMessageAndReceiveReply(msgID int) {
 	// TODO: Modify the send to avoid short-write
 	fmt.Fprintf(
-		c.conn,
+		client.conn,
 		"[CLIENT %v] Message N°%v\n",
-		c.config.ID,
+		client.config.ID,
 		msgID,
 	)
 
-	msg, err := bufio.NewReader(c.conn).ReadString('\n')
+	msg, err := bufio.NewReader(client.conn).ReadString('\n')
 	if err != nil {
 		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-			c.config.ID,
+			client.config.ID,
 			err,
 		)
 	} else {
 		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			c.config.ID,
+			client.config.ID,
 			msg,
 		)
 	}
 }
 
 // StartClientLoop Send messages to the client until some time threshold is met
-func (c *Client) StartClientLoop() {
-	c.clientRunning = true
+func (client *Client) StartClientLoop() {
+	client.clientRunning = true
 
 	signalReceiver := make(chan os.Signal, 1)
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
-	for msgID := 1; c.clientRunning && msgID <= c.config.LoopAmount; msgID++ {
+	for msgID := 1; client.clientRunning && msgID <= client.config.LoopAmount; msgID++ {
 		select {
 		case <-signalReceiver:
-			c.sigtermSignalHandler()
+			client.sigtermSignalHandler()
 		default:
 			// Create the client socket. If it is created successfully
 			// send the message and receive the reply
-			c.withNewClientSocketDo(func() {
-				c.sendMessageAndReceiveReply(msgID)
+			client.withNewClientSocketDo(func() {
+				client.sendMessageAndReceiveReply(msgID)
 				// Wait a time between sending one message and the next one
-				time.Sleep(c.config.LoopPeriod)
+				time.Sleep(client.config.LoopPeriod)
 			})
 		}
 	}
-	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	log.Infof("action: loop_finished | result: success | client_id: %v", client.config.ID)
 }
