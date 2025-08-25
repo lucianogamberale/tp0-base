@@ -38,22 +38,21 @@ class Server:
         Function blocks until a connection to a client is made.
         Then connection created is printed and returned
         """
-        client_connection = None
 
+        client_connection: Optional[socket.socket] = None
         try:
             logging.info("action: accept_connections | result: in_progress")
             client_connection, addr = self._server_socket.accept()
             logging.info(
                 f"action: accept_connections | result: success | ip: {addr[0]}"
             )
+            return client_connection
         except OSError as e:
             if client_connection is not None:
                 client_connection.shutdown(socket.SHUT_RDWR)
                 client_connection.close()
-            client_connection = None
             logging.error(f"action: accept_connections | result: fail | error: {e}")
-
-        return client_connection
+            return None
 
     # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
@@ -77,9 +76,7 @@ class Server:
             client_connection.send("{}\n".format(message).encode("utf-8"))
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
-        finally:
-            client_connection.shutdown(socket.SHUT_RDWR)
-            client_connection.close()
+            raise e
 
     # ============================== PUBLIC ============================== #
 
@@ -94,6 +91,15 @@ class Server:
         self._server_running = True
 
         while self._server_running:
-            client_connection = self.__accept_new_connection()
-            if client_connection is not None:
+            client_connection = None
+            try:
+                client_connection = self.__accept_new_connection()
+                if client_connection is None:
+                    continue
                 self.__handle_client_connection(client_connection)
+            except OSError as e:
+                logging.error(f"action: running_server | result: fail | error: {e}")
+            finally:
+                if client_connection is not None:
+                    client_connection.shutdown(socket.SHUT_RDWR)
+                    client_connection.close()
