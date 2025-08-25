@@ -1,4 +1,3 @@
-import os
 import signal
 import socket
 import logging
@@ -24,6 +23,7 @@ class Server:
         logging.info("action: sigterm_signal_handler | result: in_progress")
 
         self._server_running = False
+
         self._server_socket.close()
 
         logging.info("action: sigterm_signal_handler | result: success")
@@ -41,11 +41,8 @@ class Server:
 
         try:
             logging.info("action: accept_connections | result: in_progress")
-            client_connection, addr = self._server_socket.accept()
-            # os.kill(os.getpid(), signal.SIGTERM)  # For testing purposes
-            logging.info(
-                f"action: accept_connections | result: success | ip: {addr[0]}"
-            )
+            client_connection, [ip] = self._server_socket.accept()
+            logging.info(f"action: accept_connections | result: success | ip: {ip}")
         except OSError as e:
             if client_connection is not None:
                 client_connection.shutdown(socket.SHUT_RDWR)
@@ -68,9 +65,9 @@ class Server:
             # TODO: Modify the receive to avoid short-reads
             message = client_connection.recv(1024).rstrip().decode("utf-8")
 
-            addr = client_connection.getpeername()
+            [ip] = client_connection.getpeername()
             logging.info(
-                f"action: receive_message | result: success | ip: {addr[0]} | msg: {message}"
+                f"action: receive_message | result: success | ip: {ip} | msg: {message}"
             )
 
             # TODO: Modify the send to avoid short-writes
