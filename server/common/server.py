@@ -27,6 +27,7 @@ class Server:
         self._server_socket.close()
 
         logging.info("action: sigterm_signal_handler | result: success")
+        raise InterruptedError("Server interrupted by SIGTERM signal")
 
     # ============================== PRIVATE - ACCEPT CONNECTION ============================== #
 
@@ -41,8 +42,10 @@ class Server:
 
         try:
             logging.info("action: accept_connections | result: in_progress")
-            client_connection, [ip] = self._server_socket.accept()
-            logging.info(f"action: accept_connections | result: success | ip: {ip}")
+            client_connection, addr = self._server_socket.accept()
+            logging.info(
+                f"action: accept_connections | result: success | ip: {addr[0]}"
+            )
         except OSError as e:
             if client_connection is not None:
                 client_connection.shutdown(socket.SHUT_RDWR)
@@ -65,9 +68,9 @@ class Server:
             # TODO: Modify the receive to avoid short-reads
             message = client_connection.recv(1024).rstrip().decode("utf-8")
 
-            [ip] = client_connection.getpeername()
+            addr = client_connection.getpeername()
             logging.info(
-                f"action: receive_message | result: success | ip: {ip} | msg: {message}"
+                f"action: receive_message | result: success | ip: {addr[0]} | msg: {message}"
             )
 
             # TODO: Modify the send to avoid short-writes
