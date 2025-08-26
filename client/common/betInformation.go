@@ -2,34 +2,34 @@ package common
 
 import "fmt"
 
-type BetInformation struct {
-	agencyId        string
-	betId           string
-	playerName      string
-	playerLastname  string
-	playerDni       string
-	playerBirthDate string
+type Bet struct {
+	agency    string
+	number    string
+	firstName string
+	lastName  string
+	document  string
+	birthdate string
 }
 
-func NewBetInformation(agencyId string, betId string, playerName string, playerLastname string, playerDni string, playerBirthDate string) *BetInformation {
-	return &BetInformation{
-		agencyId:        agencyId,
-		betId:           betId,
-		playerName:      playerName,
-		playerLastname:  playerLastname,
-		playerDni:       playerDni,
-		playerBirthDate: playerBirthDate,
+func NewBet(agency string, firstName string, lastName string, document string, birthdate string, number string) *Bet {
+	return &Bet{
+		agency:    agency,
+		firstName: firstName,
+		lastName:  lastName,
+		document:  document,
+		birthdate: birthdate,
+		number:    number,
 	}
 }
 
-func (betInformation *BetInformation) AsString() string {
+func (bet *Bet) AsString() string {
 	return fmt.Sprintf(
-		`{"agencyId":"%s","betId":"%s","playerName":"%s","playerLastname":"%s","playerDni":"%s","playerBirthDate":"%s"}`,
-		betInformation.agencyId,
-		betInformation.betId,
-		betInformation.playerName,
-		betInformation.playerLastname,
-		betInformation.playerDni,
-		betInformation.playerBirthDate,
+		`{"agency":"%s","firstName":"%s","lastName":"%s","document":"%s","birthdate":"%s","number":"%s"}`,
+		bet.agency,
+		bet.firstName,
+		bet.lastName,
+		bet.document,
+		bet.birthdate,
+		bet.number,
 	)
 }

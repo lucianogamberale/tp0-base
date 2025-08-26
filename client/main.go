@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/op/go-logging"
-	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 
 	"github.com/7574-sistemas-distribuidos/docker-compose-init/client/common"
@@ -36,11 +34,11 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("server", "address")
 	v.BindEnv("log", "level")
 
-	v.BindEnv("playerName", "NOMBRE")
-	v.BindEnv("playerLastname", "APELLIDO")
-	v.BindEnv("playerDni", "DOCUMENTO")
-	v.BindEnv("playerBirthDate", "NACIMIENTO")
-	v.BindEnv("betId", "NUMERO")
+	v.BindEnv("firstName", "NOMBRE")
+	v.BindEnv("lastName", "APELLIDO")
+	v.BindEnv("document", "DOCUMENTO")
+	v.BindEnv("birthdate", "NACIMIENTO")
+	v.BindEnv("number", "NUMERO")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -49,11 +47,6 @@ func InitConfig() (*viper.Viper, error) {
 	v.SetConfigFile("./config.yaml")
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Configuration could not be read from config file. Using env variables instead")
-	}
-
-	// Parse time.Duration variables and return an error if those variables cannot be parsed
-	if _, err := time.ParseDuration(v.GetString("loop.period")); err != nil {
-		return nil, errors.Wrapf(err, "Could not parse CLI_LOOP_PERIOD env var as time.Duration.")
 	}
 
 	return v, nil
@@ -91,13 +84,13 @@ func PrintConfig(v *viper.Viper) {
 	)
 }
 
-func PrintBetInfo(v *viper.Viper) {
-	log.Debugf("action: bet_info | result: success | player_name: %s | player_lastname: %s | player_dni: %s | player_birthdate: %s | bet_number: %d",
-		v.GetString("playerName"),
-		v.GetString("playerLastname"),
-		v.GetString("playerDni"),
-		v.GetString("playerBirthDate"),
-		v.GetInt("betId"),
+func PrintBet(v *viper.Viper) {
+	log.Debugf("action: bet_info | result: success | first_name: %s | last_name: %s | document: %s | birthdate: %s | number: %d",
+		v.GetString("firstName"),
+		v.GetString("lastName"),
+		v.GetString("document"),
+		v.GetString("birthdate"),
+		v.GetInt("number"),
 	)
 }
 
@@ -113,22 +106,22 @@ func main() {
 
 	// Print program config with debugging purposes
 	PrintConfig(v)
-	PrintBetInfo(v)
+	PrintBet(v)
 
 	clientConfig := common.ClientConfig{
 		ServerAddress: v.GetString("server.address"),
 		ID:            v.GetString("id"),
 	}
 
-	betInformation := common.NewBetInformation(
+	bet := common.NewBet(
 		v.GetString("id"),
-		v.GetString("betId"),
-		v.GetString("playerName"),
-		v.GetString("playerLastname"),
-		v.GetString("playerDni"),
-		v.GetString("playerBirthDate"),
+		v.GetString("firstName"),
+		v.GetString("lastName"),
+		v.GetString("document"),
+		v.GetString("birthdate"),
+		v.GetString("number"),
 	)
 
 	client := common.NewClient(clientConfig)
-	client.SendBetInformation(betInformation)
+	client.SendBetInformation(bet)
 }

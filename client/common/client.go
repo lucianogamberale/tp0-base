@@ -137,8 +137,8 @@ func (client *Client) receiveMessage() (string, error) {
 
 // ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
 
-func (client *Client) sendBetInformationAckReceipt(betInformation *BetInformation) {
-	messageToSend := "BET[" + betInformation.AsString() + "]"
+func (client *Client) sendBetInformationAckReceipt(bet *Bet) {
+	messageToSend := "BET[" + bet.AsString() + "]"
 	err := client.sendMessage(messageToSend)
 	if err != nil {
 		return
@@ -149,22 +149,22 @@ func (client *Client) sendBetInformationAckReceipt(betInformation *BetInformatio
 		return
 	}
 
-	if receivedMessage == messageToSend {
+	if receivedMessage == "ACK[1]" {
 		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
-			betInformation.playerDni,
-			betInformation.betId,
+			bet.document,
+			bet.number,
 		)
 	} else {
 		log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %s",
-			betInformation.playerDni,
-			betInformation.betId,
+			bet.document,
+			bet.number,
 		)
 	}
 }
 
 // ============================== PUBLIC ============================== //
 
-func (client *Client) SendBetInformation(betInformation *BetInformation) {
+func (client *Client) SendBetInformation(bet *Bet) {
 	client.clientRunning = true
 	signalReceiver := client.buildSignalReceiver()
 
@@ -173,7 +173,7 @@ func (client *Client) SendBetInformation(betInformation *BetInformation) {
 		client.sigtermSignalHandler(signalReceiver)
 	default:
 		client.withNewClientSocketDo(func() {
-			client.sendBetInformationAckReceipt(betInformation)
+			client.sendBetInformationAckReceipt(bet)
 		})
 	}
 }
