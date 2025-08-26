@@ -7,10 +7,10 @@ const (
 	ACK_MSG_HEADER = "ACK["
 )
 
-func BetMessageFor(bet *Bet) string {
+func EncodeBetMessage(bet *Bet) string {
 	return BET_MSG_HEADER + bet.AsString() + string(DELIMITER)
 }
 
-func AckMessage(ack string) string {
-	return ACK_MSG_HEADER + ack + string(DELIMITER)
+func EncodeAckMessage(message string) string {
+	return ACK_MSG_HEADER + message + string(DELIMITER)
 }

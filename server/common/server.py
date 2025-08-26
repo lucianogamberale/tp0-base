@@ -4,7 +4,7 @@ import logging
 import json
 from typing import Optional
 
-from common import utils
+from common import utils, communication_protocol
 
 
 class Server:
@@ -85,7 +85,7 @@ class Server:
                 )
                 OSError("Unexpected disconnection of the client")
 
-            if chunk.endswith(b"]"):
+            if chunk.endswith(communication_protocol.DELIMITER.encode("utf-8")):
                 all_data_received = True
 
             bytes_received += chunk
@@ -98,39 +98,20 @@ class Server:
 
     # ============================== PRIVATE - HANDLE BET ============================== #
 
-    def _parse_bet(self, message: str) -> utils.Bet:
-        # Expected format: BET[<json>]
-        if not (message.startswith("BET[") and message.endswith("]")):
-            logging.error(f"action: receive_bet | result: fail | error: invalid format")
-            raise ValueError("Unexpected message bet format")
-
-        bet_data = message[4:-1]
-        bet_data = json.loads(bet_data)
-        bet = utils.Bet(
-            agency=bet_data["agency"],
-            first_name=bet_data["first_name"],
-            last_name=bet_data["last_name"],
-            document=bet_data["document"],
-            birthdate=bet_data["birthdate"],
-            number=bet_data["number"],
-        )
-        return bet
-
     def __receive_bet(self, client_connection: socket.socket) -> utils.Bet:
         logging.info(f"action: receive_bet | result: in_progress")
 
         message = self.__receive_message(client_connection)
-        bet = self._parse_bet(message)
+        bet = communication_protocol.decode_bet_message(message)
 
-        logging.info(
-            f"action: receive_bet | result: success",
-        )
+        logging.info(f"action: receive_bet | result: success")
         return bet
 
     def __send_bet_ack(self, client_connection: socket.socket) -> None:
         logging.info(f"action: send_bet_ack | result: success")
 
-        self.__send_message(client_connection, "ACK[1]")
+        message = communication_protocol.encode_ack_message("1")
+        self.__send_message(client_connection, message)
 
         logging.info(f"action: send_bet_ack | result: success")
 

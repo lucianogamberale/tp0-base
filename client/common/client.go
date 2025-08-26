@@ -138,7 +138,7 @@ func (client *Client) receiveMessage() (string, error) {
 // ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
 
 func (client *Client) sendBetInformationAckReceipt(bet *Bet) {
-	messageToSend := BetMessageFor(bet)
+	messageToSend := EncodeBetMessage(bet)
 	err := client.sendMessage(messageToSend)
 	if err != nil {
 		return
@@ -149,7 +149,8 @@ func (client *Client) sendBetInformationAckReceipt(bet *Bet) {
 		return
 	}
 
-	if receivedMessage == AckMessage("1") {
+	expectedMessage := EncodeAckMessage("1")
+	if receivedMessage == expectedMessage {
 		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
 			bet.document,
 			bet.number,
