@@ -119,7 +119,7 @@ func (client *Client) sendMessage(message string) error {
 
 func (client *Client) receiveMessage() (string, error) {
 	reader := bufio.NewReader(client.conn)
-	msg, err := reader.ReadString(']') // set as constant
+	msg, err := reader.ReadString(DELIMITER)
 	if err != nil {
 		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
 			client.config.ID,
@@ -138,7 +138,7 @@ func (client *Client) receiveMessage() (string, error) {
 // ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
 
 func (client *Client) sendBetInformationAckReceipt(bet *Bet) {
-	messageToSend := "BET[" + bet.AsString() + "]"
+	messageToSend := BetMessageFor(bet)
 	err := client.sendMessage(messageToSend)
 	if err != nil {
 		return
@@ -149,7 +149,7 @@ func (client *Client) sendBetInformationAckReceipt(bet *Bet) {
 		return
 	}
 
-	if receivedMessage == "ACK[1]" {
+	if receivedMessage == AckMessage("1") {
 		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
 			bet.document,
 			bet.number,
