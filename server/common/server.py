@@ -61,8 +61,6 @@ class Server:
     def __send_message(self, client_connection: socket.socket, message: str) -> None:
         logging.info(f"action: send_message | result: in_progress | msg: {message}")
 
-        # TODO: make it fail, que reciba uno y rompa para ver el error que arroja
-        # porque ya veo que no lo estoy atajando
         client_connection.sendall(message.encode("utf-8"))
 
         logging.info(f"action: send_message | result: success |  msg: {message}")
