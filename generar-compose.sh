@@ -65,6 +65,10 @@ function add-client-service() {
   add-line $compose_filename "        source: ./client/config.yaml"
   add-line $compose_filename "        target: /config.yaml"
   add-line $compose_filename "        read_only: true"
+  add-line $compose_filename "      - type: bind"
+  add-line $compose_filename "        source: ./.data/agency-$client_id.csv"
+  add-line $compose_filename "        target: /.data/agency-$client_id.csv"
+  add-line $compose_filename "        read_only: true"
   add-line $compose_filename "    depends_on:"
   add-line $compose_filename "      - server"
 }
