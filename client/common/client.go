@@ -36,7 +36,7 @@ func NewClient(config ClientConfig) *Client {
 	return client
 }
 
-func (client *Client) sigtermSignalHandler() {
+func (client *Client) sigtermSignalHandler(signalReceiver chan os.Signal) {
 	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
 
 	client.clientRunning = false
@@ -45,6 +45,8 @@ func (client *Client) sigtermSignalHandler() {
 		client.conn.Close()
 		client.conn = nil
 	}
+
+	close(signalReceiver)
 
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
@@ -110,7 +112,7 @@ func (client *Client) StartClientLoop() {
 	for msgID := 1; client.clientRunning && msgID <= client.config.LoopAmount; msgID++ {
 		select {
 		case <-signalReceiver:
-			client.sigtermSignalHandler()
+			client.sigtermSignalHandler(signalReceiver)
 		default:
 			// Create the client socket. If it is created successfully
 			// send the message and receive the reply
