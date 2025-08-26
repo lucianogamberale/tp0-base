@@ -24,7 +24,7 @@ func NewBet(agency string, firstName string, lastName string, document string, b
 
 func (bet *Bet) AsString() string {
 	return fmt.Sprintf(
-		`{"agency":"%s","firstName":"%s","lastName":"%s","document":"%s","birthdate":"%s","number":"%s"}`,
+		`{"agency":"%s","first_name":"%s","last_name":"%s","document":"%s","birthdate":"%s","number":"%s"}`,
 		bet.agency,
 		bet.firstName,
 		bet.lastName,

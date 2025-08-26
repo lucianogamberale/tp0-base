@@ -1,7 +1,10 @@
 import signal
 import socket
 import logging
+import json
 from typing import Optional
+
+from common import utils
 
 
 class Server:
@@ -56,17 +59,17 @@ class Server:
             logging.error(f"action: accept_connections | result: fail | error: {e}")
             return None
 
-    # ============================== PRIVATE - HANDLE CONNECTION ============================== #
+    # ============================== PRIVATE - SEND/RECEIVE MESSAGES ============================== #
 
     def __send_message(self, client_connection: socket.socket, message: str) -> None:
-        logging.info(f"action: send_message | result: in_progress | msg: {message}")
+        logging.debug(f"action: send_message | result: in_progress | msg: {message}")
 
         client_connection.sendall(message.encode("utf-8"))
 
-        logging.info(f"action: send_message | result: success |  msg: {message}")
+        logging.debug(f"action: send_message | result: success |  msg: {message}")
 
     def __receive_message(self, client_connection: socket.socket) -> str:
-        logging.info(
+        logging.debug(
             f"action: receive_message | result: in_progress",
         )
 
@@ -88,10 +91,50 @@ class Server:
             bytes_received += chunk
 
         message = bytes_received.decode("utf-8")
-        logging.info(
+        logging.debug(
             f"action: receive_message | result: success | msg: {message}",
         )
         return message
+
+    # ============================== PRIVATE - HANDLE BET ============================== #
+
+    def _parse_bet(self, message: str) -> utils.Bet:
+        # Expected format: BET[<json>]
+        if not (message.startswith("BET[") and message.endswith("]")):
+            logging.error(f"action: receive_bet | result: fail | error: invalid format")
+            raise ValueError("Unexpected message bet format")
+
+        bet_data = message[4:-1]
+        bet_data = json.loads(bet_data)
+        bet = utils.Bet(
+            agency=bet_data["agency"],
+            first_name=bet_data["first_name"],
+            last_name=bet_data["last_name"],
+            document=bet_data["document"],
+            birthdate=bet_data["birthdate"],
+            number=bet_data["number"],
+        )
+        return bet
+
+    def __receive_bet(self, client_connection: socket.socket) -> utils.Bet:
+        logging.info(f"action: receive_bet | result: in_progress")
+
+        message = self.__receive_message(client_connection)
+        bet = self._parse_bet(message)
+
+        logging.info(
+            f"action: receive_bet | result: success",
+        )
+        return bet
+
+    def __send_bet_ack(self, client_connection: socket.socket) -> None:
+        logging.info(f"action: send_bet_ack | result: success")
+
+        self.__send_message(client_connection, "ACK[1]")
+
+        logging.info(f"action: send_bet_ack | result: success")
+
+    # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
     def __handle_client_connection(self, client_connection: socket.socket) -> None:
         """
@@ -101,8 +144,14 @@ class Server:
         client socket will also be closed
         """
         try:
-            message = self.__receive_message(client_connection)
-            self.__send_message(client_connection, message)
+            bet = self.__receive_bet(client_connection)
+
+            utils.store_bets([bet])
+            logging.info(
+                f"action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}"
+            )
+
+            self.__send_bet_ack(client_connection)
         except OSError as e:
             logging.error(f"action: handle_connection | result: fail | error: {e}")
             raise e
@@ -126,7 +175,7 @@ class Server:
                 if client_connection is None:
                     continue
                 self.__handle_client_connection(client_connection)
-            except OSError as e:
+            except Exception as e:
                 logging.error(f"action: running_server | result: fail | error: {e}")
             finally:
                 if client_connection is not None:
