@@ -2,7 +2,6 @@ package common
 
 import (
 	"bufio"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -13,6 +12,8 @@ import (
 )
 
 var log = logging.MustGetLogger("log")
+
+// ============================== STRUCT DEFINITION ============================== //
 
 // ClientConfig Configuration used by the client
 type ClientConfig struct {
@@ -29,6 +30,8 @@ type Client struct {
 	clientRunning bool
 }
 
+// ============================== BUILDER ============================== //
+
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
 func NewClient(config ClientConfig) *Client {
@@ -36,7 +39,15 @@ func NewClient(config ClientConfig) *Client {
 	return client
 }
 
-func (client *Client) sigtermSignalHandler() {
+// ============================== PRIVATE - SIGNAL HANDLER ============================== //
+
+func (client *Client) buildSignalReceiver() chan os.Signal {
+	signalReceiver := make(chan os.Signal, 1)
+	signal.Notify(signalReceiver, syscall.SIGTERM)
+	return signalReceiver
+}
+
+func (client *Client) sigtermSignalHandler(signalReceiver chan os.Signal) {
 	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
 
 	client.clientRunning = false
@@ -44,10 +55,16 @@ func (client *Client) sigtermSignalHandler() {
 	if client.conn != nil {
 		client.conn.Close()
 		client.conn = nil
+		log.Debugf("action: closing_connection | result: success | client_id: %v", client.config.ID)
 	}
+
+	close(signalReceiver)
+	log.Debugf("action: closing_signal_receiver | result: success | client_id: %v", client.config.ID)
 
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
+
+// ============================== PRIVATE - CREATE CLIENT CONNECTION ============================== //
 
 // CreateClientSocket Initializes client socket. In case of
 // failure, error is printed in stdout/stderr and exit 1
@@ -75,51 +92,91 @@ func (client *Client) withNewClientSocketDo(function func()) {
 	}
 }
 
-func (client *Client) sendMessageAndReceiveReply(msgID int) {
-	// TODO: Modify the send to avoid short-write
-	fmt.Fprintf(
-		client.conn,
-		"[CLIENT %v] Message N°%v\n",
-		client.config.ID,
-		msgID,
-	)
+// ============================== PRIVATE - SEND/RECEIVE MESSAGES ============================== //
 
-	msg, err := bufio.NewReader(client.conn).ReadString('\n')
+func (client *Client) sendMessage(message string) error {
+	writer := bufio.NewWriter(client.conn)
+	_, err := writer.WriteString(message)
+	if err != nil {
+		log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+			client.config.ID,
+			err,
+		)
+		return err
+	}
+
+	err = writer.Flush()
+	if err != nil {
+		log.Errorf("action: flush_message | result: fail | client_id: %v | error: %v",
+			client.config.ID,
+			err,
+		)
+	}
+
+	log.Infof("action: send_message | result: success | client_id: %v | msg: %v",
+		client.config.ID,
+		message,
+	)
+	return nil
+}
+
+func (client *Client) receiveMessage() (string, error) {
+	reader := bufio.NewReader(client.conn)
+	msg, err := reader.ReadString(']') // set as constant
 	if err != nil {
 		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
 			client.config.ID,
 			err,
 		)
+		return "", err
+	}
+
+	log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
+		client.config.ID,
+		msg,
+	)
+	return msg, nil
+}
+
+// ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
+
+func (client *Client) sendBetInformationAckReceipt(betInformation *BetInformation) {
+	messageToSend := "BET[" + betInformation.AsString() + "]"
+	err := client.sendMessage(messageToSend)
+	if err != nil {
+		return
+	}
+
+	receivedMessage, err := client.receiveMessage()
+	if err != nil {
+		return
+	}
+
+	if receivedMessage == messageToSend {
+		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
+			betInformation.playerDni,
+			betInformation.betId,
+		)
 	} else {
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			client.config.ID,
-			msg,
+		log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %s",
+			betInformation.playerDni,
+			betInformation.betId,
 		)
 	}
 }
 
-// StartClientLoop Send messages to the client until some time threshold is met
-func (client *Client) StartClientLoop() {
+// ============================== PUBLIC ============================== //
+
+func (client *Client) SendBetInformation(betInformation *BetInformation) {
 	client.clientRunning = true
+	signalReceiver := client.buildSignalReceiver()
 
-	signalReceiver := make(chan os.Signal, 1)
-	signal.Notify(signalReceiver, syscall.SIGTERM)
-
-	// There is an autoincremental msgID to identify every message sent
-	// Messages if the message amount threshold has not been surpassed
-	for msgID := 1; client.clientRunning && msgID <= client.config.LoopAmount; msgID++ {
-		select {
-		case <-signalReceiver:
-			client.sigtermSignalHandler()
-		default:
-			// Create the client socket. If it is created successfully
-			// send the message and receive the reply
-			client.withNewClientSocketDo(func() {
-				client.sendMessageAndReceiveReply(msgID)
-				// Wait a time between sending one message and the next one
-				time.Sleep(client.config.LoopPeriod)
-			})
-		}
+	select {
+	case <-signalReceiver:
+		client.sigtermSignalHandler(signalReceiver)
+	default:
+		client.withNewClientSocketDo(func() {
+			client.sendBetInformationAckReceipt(betInformation)
+		})
 	}
-	log.Infof("action: loop_finished | result: success | client_id: %v", client.config.ID)
 }

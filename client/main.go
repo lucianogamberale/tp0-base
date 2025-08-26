@@ -38,6 +38,12 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
 
+	v.BindEnv("playerName", "NOMBRE")
+	v.BindEnv("playerLastname", "APELLIDO")
+	v.BindEnv("playerDni", "DOCUMENTO")
+	v.BindEnv("playerBirthDate", "NACIMIENTO")
+	v.BindEnv("betId", "NUMERO")
+
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
 	// can be loaded from the environment variables so we shouldn't
@@ -48,7 +54,6 @@ func InitConfig() (*viper.Viper, error) {
 	}
 
 	// Parse time.Duration variables and return an error if those variables cannot be parsed
-
 	if _, err := time.ParseDuration(v.GetString("loop.period")); err != nil {
 		return nil, errors.Wrapf(err, "Could not parse CLI_LOOP_PERIOD env var as time.Duration.")
 	}
@@ -90,18 +95,29 @@ func PrintConfig(v *viper.Viper) {
 	)
 }
 
+func PrintBetInfo(v *viper.Viper) {
+	log.Debugf("action: bet_info | result: success | player_name: %s | player_lastname: %s | player_dni: %s | player_birthdate: %s | bet_number: %d",
+		v.GetString("playerName"),
+		v.GetString("playerLastname"),
+		v.GetString("playerDni"),
+		v.GetString("playerBirthDate"),
+		v.GetInt("betId"),
+	)
+}
+
 func main() {
 	v, err := InitConfig()
 	if err != nil {
-		log.Criticalf("%s", err)
+		log.Fatalf("%s", err)
 	}
 
 	if err := InitLogger(v.GetString("log.level")); err != nil {
-		log.Criticalf("%s", err)
+		log.Fatalf("%s", err)
 	}
 
 	// Print program config with debugging purposes
 	PrintConfig(v)
+	PrintBetInfo(v)
 
 	clientConfig := common.ClientConfig{
 		ServerAddress: v.GetString("server.address"),
@@ -110,6 +126,15 @@ func main() {
 		LoopPeriod:    v.GetDuration("loop.period"),
 	}
 
+	betInformation := common.NewBetInformation(
+		v.GetString("id"),
+		v.GetString("betId"),
+		v.GetString("playerName"),
+		v.GetString("playerLastname"),
+		v.GetString("playerDni"),
+		v.GetString("playerBirthDate"),
+	)
+
 	client := common.NewClient(clientConfig)
-	client.StartClientLoop()
+	client.SendBetInformation(betInformation)
 }
