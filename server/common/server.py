@@ -41,7 +41,9 @@ class Server:
 
         client_connection: Optional[socket.socket] = None
         try:
-            logging.info("action: accept_connections | result: in_progress")
+            logging.info(
+                "action: accept_connections | result: in_progress",
+            )
             client_connection, addr = self._server_socket.accept()
             logging.info(
                 f"action: accept_connections | result: success | ip: {addr[0]}"
@@ -56,6 +58,43 @@ class Server:
 
     # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
+    def __send_message(self, client_connection: socket.socket, message: str) -> None:
+        logging.info(f"action: send_message | result: in_progress | msg: {message}")
+
+        # TODO: make it fail, que reciba uno y rompa para ver el error que arroja
+        # porque ya veo que no lo estoy atajando
+        client_connection.sendall(message.encode("utf-8"))
+
+        logging.info(f"action: send_message | result: success |  msg: {message}")
+
+    def __receive_message(self, client_connection: socket.socket) -> str:
+        logging.info(
+            f"action: receive_message | result: in_progress",
+        )
+
+        buffsize = 1024
+        bytes_received = b""
+
+        all_data_received = False
+        while not all_data_received:
+            chunk = client_connection.recv(buffsize)
+            if len(chunk) == 0:
+                logging.error(
+                    f"action: receive_message | result: fail | error: unexpected disconnection",
+                )
+                OSError("Unexpected disconnection of the client")
+
+            if chunk.endswith(b"]"):
+                all_data_received = True
+
+            bytes_received += chunk
+
+        message = bytes_received.decode("utf-8")
+        logging.info(
+            f"action: receive_message | result: success | msg: {message}",
+        )
+        return message
+
     def __handle_client_connection(self, client_connection: socket.socket) -> None:
         """
         Read message from a specific client socket and closes the socket
@@ -64,18 +103,10 @@ class Server:
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
-            message = client_connection.recv(1024).rstrip().decode("utf-8")
-
-            addr = client_connection.getpeername()
-            logging.info(
-                f"action: receive_message | result: success | ip: {addr[0]} | msg: {message}"
-            )
-
-            # TODO: Modify the send to avoid short-writes
-            client_connection.send("{}\n".format(message).encode("utf-8"))
+            message = self.__receive_message(client_connection)
+            self.__send_message(client_connection, message)
         except OSError as e:
-            logging.error(f"action: receive_message | result: fail | error: {e}")
+            logging.error(f"action: handle_connection | result: fail | error: {e}")
             raise e
 
     # ============================== PUBLIC ============================== #
