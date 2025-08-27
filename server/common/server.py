@@ -25,6 +25,7 @@ class Server:
         self._server_running = False
 
         self._server_socket.shutdown(socket.SHUT_RDWR)
+        self._server_socket.close()
         logging.debug("action: sigterm_server_socket_close | result: success")
 
         logging.info("action: sigterm_signal_handler | result: success")
