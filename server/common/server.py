@@ -24,10 +24,11 @@ class Server:
 
         self._server_running = False
 
+        self._server_socket.shutdown(socket.SHUT_RDWR)
         self._server_socket.close()
+        logging.debug("action: sigterm_server_socket_close | result: success")
 
         logging.info("action: sigterm_signal_handler | result: success")
-        raise InterruptedError("Server interrupted by SIGTERM signal")
 
     # ============================== PRIVATE - ACCEPT CONNECTION ============================== #
 
@@ -41,7 +42,9 @@ class Server:
 
         client_connection: Optional[socket.socket] = None
         try:
-            logging.info("action: accept_connections | result: in_progress")
+            logging.info(
+                "action: accept_connections | result: in_progress",
+            )
             client_connection, addr = self._server_socket.accept()
             logging.info(
                 f"action: accept_connections | result: success | ip: {addr[0]}"
@@ -51,6 +54,7 @@ class Server:
             if client_connection is not None:
                 client_connection.shutdown(socket.SHUT_RDWR)
                 client_connection.close()
+                logging.debug("action: client_connection_close | result: success")
             logging.error(f"action: accept_connections | result: fail | error: {e}")
             return None
 
@@ -61,7 +65,7 @@ class Server:
         Read message from a specific client socket and closes the socket
 
         If a problem arises in the communication with the client, the
-        client socket will also be closed
+        client socket will also be close
         """
         try:
             # TODO: Modify the receive to avoid short-reads
@@ -74,8 +78,13 @@ class Server:
 
             # TODO: Modify the send to avoid short-writes
             client_connection.send("{}\n".format(message).encode("utf-8"))
+            logging.info(
+                f"action: send_message | result: success | ip: {addr[0]} | msg: {message}"
+            )
         except OSError as e:
-            logging.error(f"action: receive_message | result: fail | error: {e}")
+            logging.error(
+                f"action: receive_message | result: fail | error: {e}",
+            )
             raise e
 
     # ============================== PUBLIC ============================== #
@@ -88,18 +97,20 @@ class Server:
         communication with a client. After client with communucation
         finishes, servers starts to accept new connections again
         """
+        logging.info("action: server_startup | result: success")
         self._server_running = True
 
-        while self._server_running:
-            client_connection = None
-            try:
+        with self._server_socket:
+            while self._server_running:
+                client_connection = None
+
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
-                self.__handle_client_connection(client_connection)
-            except OSError as e:
-                logging.error(f"action: running_server | result: fail | error: {e}")
-            finally:
-                if client_connection is not None:
-                    client_connection.shutdown(socket.SHUT_RDWR)
-                    client_connection.close()
+
+                with client_connection:
+                    self.__handle_client_connection(client_connection)
+                    logging.debug("action: client_connection_close | result: success")
+            logging.debug("action: server_socker_close | result: success")
+
+        logging.info("action: server_shutdown | result: success")

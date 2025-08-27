@@ -41,7 +41,7 @@ func (client *Client) sigtermSignalHandler() {
 	if client.conn != nil {
 		client.conn.Close()
 		client.conn = nil
-		log.Infof("action: sigterm_client_connection_close | result: success | client_id: %v", client.config.ID)
+		log.Debugf("action: sigterm_client_connection_close | result: success | client_id: %v", client.config.ID)
 	}
 
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
@@ -67,7 +67,7 @@ func (client *Client) withNewClientSocketDo(function func() error) error {
 	defer func() {
 		client.conn.Close()
 		client.conn = nil
-		log.Infof("action: client_connection_close | result: success | client_id: %v", client.config.ID)
+		log.Debugf("action: client_connection_close | result: success | client_id: %v", client.config.ID)
 	}()
 	return function()
 }
@@ -102,7 +102,7 @@ func (client *Client) StartClientLoop() error {
 	signalReceiver := make(chan os.Signal, 1)
 	defer func() {
 		close(signalReceiver)
-		log.Infof("action: signal_channel_close | result: success | client_id: %v", client.config.ID)
+		log.Debugf("action: signal_channel_close | result: success | client_id: %v", client.config.ID)
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
