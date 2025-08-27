@@ -93,11 +93,11 @@ func PrintConfig(v *viper.Viper) {
 func main() {
 	v, err := InitConfig()
 	if err != nil {
-		log.Criticalf("%s", err)
+		log.Fatalf("%s", err)
 	}
 
 	if err := InitLogger(v.GetString("log.level")); err != nil {
-		log.Criticalf("%s", err)
+		log.Fatalf("%s", err)
 	}
 
 	// Print program config with debugging purposes
