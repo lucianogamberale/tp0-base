@@ -66,27 +66,25 @@ func (client *Client) sigtermSignalHandler(signalReceiver chan os.Signal) {
 // CreateClientSocket Initializes client socket. In case of
 // failure, error is printed in stdout/stderr and exit 1
 // is returned
-func (client *Client) createClientSocket() error {
+func (client *Client) createClientSocket() {
 	conn, err := net.Dial("tcp", client.config.ServerAddress)
 	if err != nil {
-		log.Criticalf(
+		log.Fatalf(
 			"action: connect | result: fail | client_id: %v | error: %v",
 			client.config.ID,
 			err,
 		)
 	}
 	client.conn = conn
-	return err
 }
 
 func (client *Client) withNewClientSocketDo(function func()) {
-	if err := client.createClientSocket(); err == nil {
-		defer func() {
-			client.conn.Close()
-			client.conn = nil
-		}()
-		function()
-	}
+	client.createClientSocket()
+	defer func() {
+		client.conn.Close()
+		client.conn = nil
+	}()
+	function()
 }
 
 // ============================== PRIVATE - SEND/RECEIVE MESSAGES ============================== //
