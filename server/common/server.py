@@ -25,7 +25,6 @@ class Server:
         self._server_running = False
 
         self._server_socket.shutdown(socket.SHUT_RDWR)
-        self._server_socket.close()
         logging.debug("action: sigterm_server_socket_close | result: success")
 
         logging.info("action: sigterm_signal_handler | result: success")
@@ -98,12 +97,10 @@ class Server:
         finishes, servers starts to accept new connections again
         """
         logging.info("action: server_startup | result: success")
-        self._server_running = True
 
+        self._server_running = True
         with self._server_socket:
             while self._server_running:
-                client_connection = None
-
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
