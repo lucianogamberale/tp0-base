@@ -24,29 +24,24 @@ type ClientConfig struct {
 
 // Client Entity that encapsulates how
 type Client struct {
-	config        ClientConfig
-	conn          net.Conn
-	clientRunning bool
+	config ClientConfig
+	conn   net.Conn
 }
 
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
 func NewClient(config ClientConfig) *Client {
-	client := &Client{config: config, clientRunning: false}
+	client := &Client{config: config}
 	return client
 }
 
-func (client *Client) sigtermSignalHandler(signalReceiver chan os.Signal) {
+func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
-
-	client.clientRunning = false
 
 	if client.conn != nil {
 		client.conn.Close()
 		client.conn = nil
 	}
-
-	close(signalReceiver)
 
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
@@ -66,16 +61,16 @@ func (client *Client) createClientSocket() {
 	client.conn = conn
 }
 
-func (client *Client) withNewClientSocketDo(function func()) {
+func (client *Client) withNewClientSocketDo(function func() error) error {
 	client.createClientSocket()
 	defer func() {
 		client.conn.Close()
 		client.conn = nil
 	}()
-	function()
+	return function()
 }
 
-func (client *Client) sendMessageAndReceiveReply(msgID int) {
+func (client *Client) sendMessageAndReceiveReply(msgID int) error {
 	// TODO: Modify the send to avoid short-write
 	fmt.Fprintf(
 		client.conn,
@@ -90,36 +85,47 @@ func (client *Client) sendMessageAndReceiveReply(msgID int) {
 			client.config.ID,
 			err,
 		)
-	} else {
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			client.config.ID,
-			msg,
-		)
+		return err
 	}
+
+	log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
+		client.config.ID,
+		msg,
+	)
+	return nil
 }
 
 // StartClientLoop Send messages to the client until some time threshold is met
-func (client *Client) StartClientLoop() {
-	client.clientRunning = true
-
+func (client *Client) StartClientLoop() error {
 	signalReceiver := make(chan os.Signal, 1)
+	defer close(signalReceiver)
 	signal.Notify(signalReceiver, syscall.SIGTERM)
+
+	err := error(nil)
 
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
-	for msgID := 1; client.clientRunning && msgID <= client.config.LoopAmount; msgID++ {
+	for msgID := 1; msgID <= client.config.LoopAmount; msgID++ {
 		select {
 		case <-signalReceiver:
-			client.sigtermSignalHandler(signalReceiver)
+			client.sigtermSignalHandler()
+			return nil
 		default:
 			// Create the client socket. If it is created successfully
 			// send the message and receive the reply
-			client.withNewClientSocketDo(func() {
-				client.sendMessageAndReceiveReply(msgID)
+			err = client.withNewClientSocketDo(func() error {
+				err := client.sendMessageAndReceiveReply(msgID)
 				// Wait a time between sending one message and the next one
 				time.Sleep(client.config.LoopPeriod)
+				return err
 			})
+			if err != nil {
+				log.Errorf("action: loop_finished | result: fail | client_id: %v", client.config.ID)
+				return err
+			}
 		}
 	}
+
 	log.Infof("action: loop_finished | result: success | client_id: %v", client.config.ID)
+	return nil
 }
