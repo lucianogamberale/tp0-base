@@ -123,5 +123,8 @@ func main() {
 	)
 
 	client := common.NewClient(clientConfig)
-	client.SendBetInformation(bet)
+	err = client.SendBetInformation(bet)
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
 }

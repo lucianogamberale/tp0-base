@@ -2,6 +2,7 @@ package common
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"os"
 	"os/signal"
@@ -22,9 +23,8 @@ type ClientConfig struct {
 
 // Client Entity that encapsulates how
 type Client struct {
-	config        ClientConfig
-	conn          net.Conn
-	clientRunning bool
+	config ClientConfig
+	conn   net.Conn
 }
 
 // ============================== BUILDER ============================== //
@@ -32,31 +32,20 @@ type Client struct {
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
 func NewClient(config ClientConfig) *Client {
-	client := &Client{config: config, clientRunning: false}
+	client := &Client{config: config}
 	return client
 }
 
 // ============================== PRIVATE - SIGNAL HANDLER ============================== //
 
-func (client *Client) buildSignalReceiver() chan os.Signal {
-	signalReceiver := make(chan os.Signal, 1)
-	signal.Notify(signalReceiver, syscall.SIGTERM)
-	return signalReceiver
-}
-
-func (client *Client) sigtermSignalHandler(signalReceiver chan os.Signal) {
+func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
-
-	client.clientRunning = false
 
 	if client.conn != nil {
 		client.conn.Close()
 		client.conn = nil
-		log.Debugf("action: closing_connection | result: success | client_id: %v", client.config.ID)
+		log.Debugf("action: sigterm_client_connection_close | result: success | client_id: %v", client.config.ID)
 	}
-
-	close(signalReceiver)
-	log.Debugf("action: closing_signal_receiver | result: success | client_id: %v", client.config.ID)
 
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
@@ -78,13 +67,14 @@ func (client *Client) createClientSocket() {
 	client.conn = conn
 }
 
-func (client *Client) withNewClientSocketDo(function func()) {
+func (client *Client) withNewClientSocketDo(function func() error) error {
 	client.createClientSocket()
 	defer func() {
 		client.conn.Close()
 		client.conn = nil
+		log.Debugf("action: client_connection_close | result: success | client_id: %v", client.config.ID)
 	}()
-	function()
+	return function()
 }
 
 // ============================== PRIVATE - SEND/RECEIVE MESSAGES ============================== //
@@ -108,7 +98,7 @@ func (client *Client) sendMessage(message string) error {
 		)
 	}
 
-	log.Infof("action: send_message | result: success | client_id: %v | msg: %v",
+	log.Debugf("action: send_message | result: success | client_id: %v | msg: %v",
 		client.config.ID,
 		message,
 	)
@@ -135,44 +125,60 @@ func (client *Client) receiveMessage() (string, error) {
 
 // ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
 
-func (client *Client) sendBetInformationAckReceipt(bet *Bet) {
+func (client *Client) sendBetInformationAckReceipt(bet *Bet) error {
 	messageToSend := EncodeBetMessage(bet)
 	err := client.sendMessage(messageToSend)
 	if err != nil {
-		return
+		return err
 	}
 
 	receivedMessage, err := client.receiveMessage()
 	if err != nil {
-		return
+		return err
 	}
 
 	expectedMessage := EncodeAckMessage("1")
-	if receivedMessage == expectedMessage {
-		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
-			bet.document,
-			bet.number,
-		)
-	} else {
+	if receivedMessage != expectedMessage {
 		log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %s",
 			bet.document,
 			bet.number,
 		)
+		return errors.New("bad ack message received")
 	}
+
+	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
+		bet.document,
+		bet.number,
+	)
+	return nil
 }
 
 // ============================== PUBLIC ============================== //
 
-func (client *Client) SendBetInformation(bet *Bet) {
-	client.clientRunning = true
-	signalReceiver := client.buildSignalReceiver()
+func (client *Client) SendBetInformation(bet *Bet) error {
+	log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
+
+	signalReceiver := make(chan os.Signal, 1)
+	defer func() {
+		close(signalReceiver)
+		log.Debugf("action: signal_channel_close | result: success | client_id: %v", client.config.ID)
+	}()
+	signal.Notify(signalReceiver, syscall.SIGTERM)
 
 	select {
 	case <-signalReceiver:
-		client.sigtermSignalHandler(signalReceiver)
+		client.sigtermSignalHandler()
+		return nil
 	default:
-		client.withNewClientSocketDo(func() {
-			client.sendBetInformationAckReceipt(bet)
+		err := client.withNewClientSocketDo(func() error {
+			return client.sendBetInformationAckReceipt(bet)
 		})
+		if err != nil {
+			log.Errorf("action: send_bet | result: fail | client_id: %v", client.config.ID)
+			return err
+		}
 	}
+
+	log.Infof("action: send_bet | result: success | client_id: %v", client.config.ID)
+	return nil
 }
