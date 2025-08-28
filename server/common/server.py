@@ -50,7 +50,7 @@ class Server:
             )
             client_connection, addr = self._server_socket.accept()
             logging.info(
-                f"action: accept_connections | result: success | ip: {addr[0]}"
+                f"action: accept_connections | result: success | ip: {addr[0]}",
             )
             return client_connection
         except OSError as e:
@@ -71,9 +71,7 @@ class Server:
         logging.debug(f"action: send_message | result: success |  msg: {message}")
 
     def __receive_message(self, client_connection: socket.socket) -> str:
-        logging.debug(
-            f"action: receive_message | result: in_progress",
-        )
+        logging.debug(f"action: receive_message | result: in_progress")
 
         buffsize = utils.KiB
         bytes_received = b""
@@ -87,15 +85,14 @@ class Server:
                 )
                 OSError("Unexpected disconnection of the client")
 
+            logging.debug(f"action: receive_chuck | result: success | chunk: {chunk}")
             if chunk.endswith(communication_protocol.DELIMITER.encode("utf-8")):
                 all_data_received = True
 
             bytes_received += chunk
 
         message = bytes_received.decode("utf-8")
-        logging.debug(
-            f"action: receive_message | result: success | msg: {message}",
-        )
+        logging.debug(f"action: receive_message | result: success | msg: {message}")
         return message
 
     # ============================== PRIVATE - HANDLE BET ============================== #
