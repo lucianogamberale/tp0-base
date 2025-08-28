@@ -27,10 +27,11 @@ class Server:
 
         self._server_running = False
 
+        self._server_socket.shutdown(socket.SHUT_RDWR)
         self._server_socket.close()
+        logging.debug("action: sigterm_server_socket_close | result: success")
 
         logging.info("action: sigterm_signal_handler | result: success")
-        raise InterruptedError("Server interrupted by SIGTERM signal")
 
     # ============================== PRIVATE - ACCEPT CONNECTION ============================== #
 
@@ -56,6 +57,7 @@ class Server:
             if client_connection is not None:
                 client_connection.shutdown(socket.SHUT_RDWR)
                 client_connection.close()
+                logging.debug("action: client_connection_close | result: success")
             logging.error(f"action: accept_connections | result: fail | error: {e}")
             return None
 
@@ -73,7 +75,7 @@ class Server:
             f"action: receive_message | result: in_progress",
         )
 
-        buffsize = 1024
+        buffsize = utils.KiB
         bytes_received = b""
 
         all_data_received = False
@@ -133,7 +135,7 @@ class Server:
             )
 
             self.__send_bet_ack(client_connection)
-        except OSError as e:
+        except Exception as e:
             logging.error(f"action: handle_connection | result: fail | error: {e}")
             raise e
 
@@ -147,18 +149,18 @@ class Server:
         communication with a client. After client with communucation
         finishes, servers starts to accept new connections again
         """
-        self._server_running = True
+        logging.info("action: server_startup | result: success")
 
-        while self._server_running:
-            client_connection = None
-            try:
+        self._server_running = True
+        with self._server_socket:
+            while self._server_running:
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
-                self.__handle_client_connection(client_connection)
-            except Exception as e:
-                logging.error(f"action: running_server | result: fail | error: {e}")
-            finally:
-                if client_connection is not None:
-                    client_connection.shutdown(socket.SHUT_RDWR)
-                    client_connection.close()
+
+                with client_connection:
+                    self.__handle_client_connection(client_connection)
+                    logging.debug("action: client_connection_close | result: success")
+            logging.debug("action: server_socker_close | result: success")
+
+        logging.info("action: server_shutdown | result: success")
