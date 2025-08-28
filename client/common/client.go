@@ -139,10 +139,6 @@ func (client *Client) sendBetInformationAckReceipt(bet *Bet) error {
 
 	expectedMessage := EncodeAckMessage("1")
 	if receivedMessage != expectedMessage {
-		log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %s",
-			bet.document,
-			bet.number,
-		)
 		return errors.New("bad ack message received")
 	}
 
@@ -168,6 +164,7 @@ func (client *Client) SendBetInformation(bet *Bet) error {
 	select {
 	case <-signalReceiver:
 		client.sigtermSignalHandler()
+		log.Errorf("action: send_bet | result: fail | client_id: %v", client.config.ID)
 		return nil
 	default:
 		err := client.withNewClientSocketDo(func() error {
