@@ -122,7 +122,7 @@ func (client *Client) receiveMessage() (string, error) {
 		return "", err
 	}
 
-	log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
+	log.Debugf("action: receive_message | result: success | client_id: %v | msg: %v",
 		client.config.ID,
 		msg,
 	)
@@ -183,7 +183,7 @@ func (client *Client) readBetFromCsvUsing(csvReader csv.Reader) (*Bet, error) {
 }
 
 func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, error) {
-	log.Debugf("action: read_bet_batch_from_csv | result: in_progress | client_id: %v", client.config.ID)
+	log.Infof("action: read_bet_batch_from_csv | result: in_progress | client_id: %v", client.config.ID)
 
 	betBatch := []*Bet{}
 	amountOfReadBytesOnBatch := 0
@@ -195,7 +195,7 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 			log.Errorf("action: read_bet_batch_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
 			return nil, err
 		} else if err == io.EOF {
-			log.Debugf("action: read_bet_batch_from_csv | result: eof | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
+			log.Infof("action: read_bet_batch_from_csv | result: eof | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
 				client.config.ID,
 				len(betBatch),
 				amountOfReadBytesOnBatch,
@@ -207,7 +207,7 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 		amountOfReadBytesOnBatch += bet.LengthAsString() + 1
 	}
 
-	log.Debugf("action: read_bet_batch_from_csv | result: success | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
+	log.Infof("action: read_bet_batch_from_csv | result: success | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
 		client.config.ID,
 		len(betBatch),
 		amountOfReadBytesOnBatch,
@@ -277,7 +277,7 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 	signalReceiver := make(chan os.Signal, 1)
 	defer func() {
 		close(signalReceiver)
-		log.Debugf("action: signal_channel_close | result: success | client_id: %v", client.config.ID)
+		log.Infof("action: signal_channel_close | result: success | client_id: %v", client.config.ID)
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
