@@ -23,6 +23,7 @@ type ClientConfig struct {
 	ID                         string
 	ServerAddress              string
 	MaxAmountOfBetsOnEachBatch int
+	MaxKiBPerBatch             int
 	AgencyFileName             string
 }
 
@@ -188,7 +189,7 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 	amountOfReadBytesOnBatch := 0
 	amountOfReadBytesOnBatch += len(BET_MSG_TYPE) + len(START_DELIMITER) + len(END_DELIMITER)
 
-	for len(betBatch) < client.config.MaxAmountOfBetsOnEachBatch && amountOfReadBytesOnBatch+MAX_BYTES_BET <= MAX_BYTES_PER_CHUNK {
+	for len(betBatch) < client.config.MaxAmountOfBetsOnEachBatch && amountOfReadBytesOnBatch+MAX_BYTES_BET <= client.config.MaxKiBPerBatch*KiB {
 		bet, err := client.readBetFromCsvUsing(csvReader)
 		if err != nil && err != io.EOF {
 			log.Errorf("action: read_bet_batch_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
@@ -265,12 +266,6 @@ func (client *Client) sendBetBatch(betBatch []*Bet) error {
 		return errors.New("batch ACK message is not as expected, bet batch not correctly processed by server")
 	}
 
-	// for _, bet := range betBatch { // see if neccessary
-	// 	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
-	// 		bet.document,
-	// 		bet.number,
-	// 	)
-	// }
 	return nil
 }
 

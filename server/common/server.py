@@ -148,8 +148,6 @@ class Server:
 
         if message.startswith(communication_protocol.BET_MSG_TYPE):
             self.__handle_bet_batch_message(client_connection, message)
-        elif message.startswith(communication_protocol.END_MSG_TYPE):
-            self.__handle_end_bet_batch_message(client_connection)
         else:
             logging.error(
                 f"action: handle_client_connection | result: fail | error: invalid message type",
