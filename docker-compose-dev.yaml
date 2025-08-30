@@ -34,8 +34,13 @@ services:
         read_only: true
       - type: bind
         source: ./.data/agency-1.csv
-        target: /.data/agency-1.csv
+        target: /agency-1.csv
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -59,8 +64,13 @@ services:
         read_only: true
       - type: bind
         source: ./.data/agency-2.csv
-        target: /.data/agency-2.csv
+        target: /agency-2.csv
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -84,8 +94,13 @@ services:
         read_only: true
       - type: bind
         source: ./.data/agency-3.csv
-        target: /.data/agency-3.csv
+        target: /agency-3.csv
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -109,8 +124,13 @@ services:
         read_only: true
       - type: bind
         source: ./.data/agency-4.csv
-        target: /.data/agency-4.csv
+        target: /agency-4.csv
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -134,8 +154,13 @@ services:
         read_only: true
       - type: bind
         source: ./.data/agency-5.csv
-        target: /.data/agency-5.csv
+        target: /agency-5.csv
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
