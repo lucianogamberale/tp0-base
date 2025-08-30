@@ -160,7 +160,7 @@ func (client *Client) readBetFromCsvUsing(csvReader csv.Reader) (*Bet, error) {
 		log.Errorf("action: read_bet_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
 		return nil, err
 	} else if err == io.EOF {
-		log.Debugf("action: read_bet_from_csv | result: eof | client_id: %v", client.config.ID)
+		log.Debugf("action: no_more_bets_csv | result: success | client_id: %v", client.config.ID)
 		return nil, err
 	}
 
@@ -195,7 +195,7 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 			log.Errorf("action: read_bet_batch_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
 			return nil, err
 		} else if err == io.EOF {
-			log.Infof("action: read_bet_batch_from_csv | result: eof | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
+			log.Infof("action: no_more_bet_batchs_csv | result: success | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
 				client.config.ID,
 				len(betBatch),
 				amountOfReadBytesOnBatch,
