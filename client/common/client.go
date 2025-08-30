@@ -71,6 +71,10 @@ func (client *Client) createClientSocket() {
 		)
 	}
 	client.conn = conn
+	log.Debugf("action: connect | result: success | client_id: %v | server_address: %v",
+		client.config.ID,
+		client.config.ServerAddress,
+	)
 }
 
 func (client *Client) withNewClientSocketDo(function func() error) error {
@@ -160,7 +164,7 @@ func (client *Client) readBetFromCsvUsing(csvReader csv.Reader) (*Bet, error) {
 		log.Errorf("action: read_bet_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
 		return nil, err
 	} else if err == io.EOF {
-		log.Debugf("action: no_more_bets_csv | result: success | client_id: %v", client.config.ID)
+		log.Debugf("action: no_bets_to_read_csv | result: success | client_id: %v", client.config.ID)
 		return nil, err
 	}
 
@@ -195,7 +199,7 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 			log.Errorf("action: read_bet_batch_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
 			return nil, err
 		} else if err == io.EOF {
-			log.Infof("action: no_more_bet_batchs_csv | result: success | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
+			log.Infof("action: no_bet_batchs_to_read_csv | result: success | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
 				client.config.ID,
 				len(betBatch),
 				amountOfReadBytesOnBatch,
@@ -266,6 +270,10 @@ func (client *Client) sendBetBatch(betBatch []*Bet) error {
 		return errors.New("batch ACK message is not as expected, bet batch not correctly processed by server")
 	}
 
+	log.Infof("action: send_bet_batch | result: success | client_id: %v | bet_batch_size: %v",
+		client.config.ID,
+		batchSize,
+	)
 	return nil
 }
 
