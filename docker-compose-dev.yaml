@@ -20,11 +20,6 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
-      - NOMBRE=Nombre1
-      - APELLIDO=Apellido1
-      - DOCUMENTO=30904461
-      - NACIMIENTO=1999-03-17
-      - NUMERO=7571
     networks:
       - testing_net
     volumes:
@@ -50,11 +45,6 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=2
-      - NOMBRE=Nombre2
-      - APELLIDO=Apellido2
-      - DOCUMENTO=30904462
-      - NACIMIENTO=1999-03-17
-      - NUMERO=7572
     networks:
       - testing_net
     volumes:
@@ -80,11 +70,6 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=3
-      - NOMBRE=Nombre3
-      - APELLIDO=Apellido3
-      - DOCUMENTO=30904463
-      - NACIMIENTO=1999-03-17
-      - NUMERO=7573
     networks:
       - testing_net
     volumes:
@@ -110,11 +95,6 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=4
-      - NOMBRE=Nombre4
-      - APELLIDO=Apellido4
-      - DOCUMENTO=30904464
-      - NACIMIENTO=1999-03-17
-      - NUMERO=7574
     networks:
       - testing_net
     volumes:
@@ -140,11 +120,6 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=5
-      - NOMBRE=Nombre5
-      - APELLIDO=Apellido5
-      - DOCUMENTO=30904465
-      - NACIMIENTO=1999-03-17
-      - NUMERO=7575
     networks:
       - testing_net
     volumes:

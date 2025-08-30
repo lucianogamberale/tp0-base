@@ -128,13 +128,6 @@ class Server:
             )
             raise e
 
-    # ============================== PRIVATE - HANDLE END BET BATCH ============================== #
-
-    def __handle_end_bet_batch_message(self, client_connection: socket.socket) -> None:
-        logging.info(f"action: receive_end_bet_batch | result: in_progress")
-        self.__send_bet_batch_ack(client_connection, 0)
-        logging.info(f"action: receive_end_bet_batch | result: success")
-
     # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
     def __handle_client_connection(self, client_connection: socket.socket) -> None:

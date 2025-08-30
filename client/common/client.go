@@ -277,7 +277,7 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 	signalReceiver := make(chan os.Signal, 1)
 	defer func() {
 		close(signalReceiver)
-		log.Infof("action: signal_channel_close | result: success | client_id: %v", client.config.ID)
+		log.Debugf("action: signal_channel_close | result: success | client_id: %v", client.config.ID)
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
