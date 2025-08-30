@@ -33,12 +33,7 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("id")
 	v.BindEnv("server", "address")
 	v.BindEnv("log", "level")
-
-	v.BindEnv("firstName", "NOMBRE")
-	v.BindEnv("lastName", "APELLIDO")
-	v.BindEnv("document", "DOCUMENTO")
-	v.BindEnv("birthdate", "NACIMIENTO")
-	v.BindEnv("number", "NUMERO")
+	v.BindEnv("batch", "maxAmount")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -77,20 +72,11 @@ func InitLogger(logLevel string) error {
 // PrintConfig Print all the configuration parameters of the program.
 // For debugging purposes only
 func PrintConfig(v *viper.Viper) {
-	log.Infof("action: config | result: success | client_id: %s | server_address: %s | log_level: %s",
+	log.Infof("action: config | result: success | client_id: %s | server_address: %s | log_level: %s | barch_max_amount: %d",
 		v.GetString("id"),
 		v.GetString("server.address"),
 		v.GetString("log.level"),
-	)
-}
-
-func PrintBet(v *viper.Viper) {
-	log.Debugf("action: bet_info | result: success | first_name: %s | last_name: %s | document: %s | birthdate: %s | number: %d",
-		v.GetString("firstName"),
-		v.GetString("lastName"),
-		v.GetString("document"),
-		v.GetString("birthdate"),
-		v.GetInt("number"),
+		v.GetInt("batch.maxAmount"),
 	)
 }
 
@@ -106,24 +92,16 @@ func main() {
 
 	// Print program config with debugging purposes
 	PrintConfig(v)
-	PrintBet(v)
 
 	clientConfig := common.ClientConfig{
-		ServerAddress: v.GetString("server.address"),
-		ID:            v.GetString("id"),
+		ServerAddress:              v.GetString("server.address"),
+		ID:                         v.GetString("id"),
+		MaxAmountOfBetsOnEachBatch: v.GetInt("batch.maxAmount"),
+		AgencyFileName:             fmt.Sprintf("agency-%s.csv", v.GetString("id")),
 	}
 
-	bet := common.NewBet(
-		v.GetString("id"),
-		v.GetString("firstName"),
-		v.GetString("lastName"),
-		v.GetString("document"),
-		v.GetString("birthdate"),
-		v.GetString("number"),
-	)
-
 	client := common.NewClient(clientConfig)
-	err = client.SendBetInformation(bet)
+	err = client.SendAllBetsToNationalLotteryHeadquarters()
 	if err != nil {
 		log.Fatalf("%s", err)
 	}

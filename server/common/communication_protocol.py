@@ -1,31 +1,44 @@
 import json
 import logging
+from typing import Any
 
 from common import utils
 
-DELIMITER = "]"
 
-BET_MSG_HEADER = "BET["
-ACK_MSG_HEADER = "ACK["
+BET_MSG_TYPE = "BET"
+ACK_MSG_TYPE = "ACK"
+
+START_DELIMITER = "["
+END_DELIMITER = "]"
 
 
-def decode_bet_message(message: str) -> utils.Bet:
-    if not (message.startswith(BET_MSG_HEADER) and message.endswith(DELIMITER)):
-        logging.error(f"action: receive_bet | result: fail | error: invalid format")
+def decode_bet_batch_message(message: str) -> list[utils.Bet]:
+    if not (
+        message.startswith(BET_MSG_TYPE + START_DELIMITER)
+        and message.endswith(END_DELIMITER)
+    ):
+        logging.error(
+            f"action: decode_bet_batch | result: fail | error: invalid format"
+        )
         raise ValueError("Unexpected message bet format")
 
-    bet_data = message[4:-1]
-    bet_data = json.loads(bet_data)
-    bet = utils.Bet(
-        agency=bet_data["agency"],
-        first_name=bet_data["first_name"],
-        last_name=bet_data["last_name"],
-        document=bet_data["document"],
-        birthdate=bet_data["birthdate"],
-        number=bet_data["number"],
+    bet_batch_data: list = json.loads(message[len(BET_MSG_TYPE) :])
+    bet_batch = []
+    for bet_data in bet_batch_data:
+        bet = utils.Bet(
+            agency=bet_data["agency"],
+            first_name=bet_data["first_name"],
+            last_name=bet_data["last_name"],
+            document=bet_data["document"],
+            birthdate=bet_data["birthdate"],
+            number=bet_data["number"],
+        )
+        bet_batch.append(bet)
+    logging.debug(
+        f"action: decode_bet_batch | result: success | count: {len(bet_batch)}"
     )
-    return bet
+    return bet_batch
 
 
 def encode_ack_message(message: str) -> str:
-    return ACK_MSG_HEADER + message + DELIMITER
+    return ACK_MSG_TYPE + START_DELIMITER + message + END_DELIMITER

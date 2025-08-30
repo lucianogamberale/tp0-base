@@ -2,7 +2,10 @@ package common
 
 import (
 	"bufio"
+	"encoding/csv"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -17,8 +20,10 @@ var log = logging.MustGetLogger("log")
 
 // ClientConfig Configuration used by the client
 type ClientConfig struct {
-	ID            string
-	ServerAddress string
+	ID                         string
+	ServerAddress              string
+	MaxAmountOfBetsOnEachBatch int
+	AgencyFileName             string
 }
 
 // Client Entity that encapsulates how
@@ -107,7 +112,7 @@ func (client *Client) sendMessage(message string) error {
 
 func (client *Client) receiveMessage() (string, error) {
 	reader := bufio.NewReader(client.conn)
-	msg, err := reader.ReadString(DELIMITER)
+	msg, err := reader.ReadString(END_DELIMITER[0])
 	if err != nil {
 		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
 			client.config.ID,
@@ -123,10 +128,122 @@ func (client *Client) receiveMessage() (string, error) {
 	return msg, nil
 }
 
+// ============================= PRIVATE - READ BETS FROM CSV ============================== //
+
+func (client *Client) withCsvReaderDo(function func(csv.Reader) error) error {
+	file, err := os.Open(client.config.AgencyFileName)
+	if err != nil {
+		log.Errorf("action: agency_file_open | result: fail | client_id: %v | error: %v",
+			client.config.ID,
+			err,
+		)
+		return err
+	}
+	defer func() {
+		file.Close()
+		log.Debugf("action: agency_file_close | result: success | client_id: %v", client.config.ID)
+	}()
+	log.Debugf("action: agency_file_open | result: success | client_id: %v", client.config.ID)
+
+	csvReader := csv.NewReader(file)
+	csvReader.Comma = ','         // set as constant
+	csvReader.Comment = '#'       // set as constant
+	csvReader.FieldsPerRecord = 5 // set as constant
+
+	return function(*csvReader)
+}
+
+func (client *Client) readBetFromCsvUsing(csvReader csv.Reader) (*Bet, error) {
+	betRecord, err := csvReader.Read()
+	if err != nil && err != io.EOF {
+		log.Errorf("action: read_bet_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
+		return nil, err
+	} else if err == io.EOF {
+		log.Debugf("action: read_bet_from_csv | result: eof | client_id: %v", client.config.ID)
+		return nil, err
+	}
+
+	agency := client.config.ID
+	firstName := betRecord[0]
+	lastName := betRecord[1]
+	document := betRecord[2]
+	birthdate := betRecord[3]
+	number := betRecord[4]
+
+	log.Debugf("action: read_bet_from_csv | result: success | client_id: %v | bet: %v", client.config.ID, betRecord)
+	return NewBet(
+		agency,
+		firstName,
+		lastName,
+		document,
+		birthdate,
+		number,
+	), nil
+}
+
+func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, error) {
+	log.Debugf("action: read_bet_batch_from_csv | result: in_progress | client_id: %v", client.config.ID)
+
+	betBatch := []*Bet{}
+	amountOfReadBytesOnBatch := 0
+	amountOfReadBytesOnBatch += len(BET_MSG_TYPE) + len(START_DELIMITER) + len(END_DELIMITER)
+
+	for len(betBatch) < client.config.MaxAmountOfBetsOnEachBatch && amountOfReadBytesOnBatch+MAX_BYTES_BET <= MAX_BYTES_PER_CHUNK {
+		bet, err := client.readBetFromCsvUsing(csvReader)
+		if err != nil && err != io.EOF {
+			log.Errorf("action: read_bet_batch_from_csv | result: fail | client_id: %v | error: %v", client.config.ID, err)
+			return nil, err
+		} else if err == io.EOF {
+			log.Debugf("action: read_bet_batch_from_csv | result: eof | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
+				client.config.ID,
+				len(betBatch),
+				amountOfReadBytesOnBatch,
+			)
+			return betBatch, err
+		}
+
+		betBatch = append(betBatch, bet)
+		amountOfReadBytesOnBatch += bet.LengthAsString() + 1
+	}
+
+	log.Debugf("action: read_bet_batch_from_csv | result: success | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
+		client.config.ID,
+		len(betBatch),
+		amountOfReadBytesOnBatch,
+	)
+	return betBatch, nil
+}
+
+func (client *Client) withEachBetBatchDo(function func([]*Bet) error) (bool, error) {
+	allBatchesSent := false
+
+	err := client.withCsvReaderDo(func(csvReader csv.Reader) error {
+		for {
+			betBatch, err := client.readBetBatchFromCsvUsing(csvReader)
+			if err != nil && err != io.EOF {
+				return err
+			} else if err == io.EOF {
+				allBatchesSent = true
+				if len(betBatch) == 0 {
+					return nil
+				}
+				return function(betBatch)
+			}
+
+			err = function(betBatch)
+			if err != nil {
+				return err
+			}
+		}
+	})
+
+	return allBatchesSent, err
+}
+
 // ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
 
-func (client *Client) sendBetInformationAckReceipt(bet *Bet) error {
-	messageToSend := EncodeBetMessage(bet)
+func (client *Client) sendBetBatch(betBatch []*Bet) error {
+	messageToSend := EncodeBetBatchMessage(betBatch)
 	err := client.sendMessage(messageToSend)
 	if err != nil {
 		return err
@@ -137,26 +254,30 @@ func (client *Client) sendBetInformationAckReceipt(bet *Bet) error {
 		return err
 	}
 
-	expectedMessage := EncodeAckMessage("1")
+	batchSize := len(betBatch)
+	expectedMessage := EncodeAckMessage(fmt.Sprintf("%d", batchSize))
 	if receivedMessage != expectedMessage {
-		log.Errorf("action: apuesta_enviada | result: fail | dni: %s | numero: %s",
-			bet.document,
-			bet.number,
+		log.Errorf("action: ack_message_check | result: fail | client_id: %v | expected: %v | received: %v",
+			client.config.ID,
+			expectedMessage,
+			receivedMessage,
 		)
-		return errors.New("bad ack message received")
+		return errors.New("batch ACK message is not as expected, bet batch not correctly processed by server")
 	}
 
-	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
-		bet.document,
-		bet.number,
-	)
+	// for _, bet := range betBatch { // see if neccessary
+	// 	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
+	// 		bet.document,
+	// 		bet.number,
+	// 	)
+	// }
 	return nil
 }
 
 // ============================== PUBLIC ============================== //
 
-func (client *Client) SendBetInformation(bet *Bet) error {
-	log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
+func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
+	log.Infof("action: send_all_bets_to_national_lottery_headquarters | result: in_progress | client_id: %v", client.config.ID)
 
 	signalReceiver := make(chan os.Signal, 1)
 	defer func() {
@@ -165,20 +286,27 @@ func (client *Client) SendBetInformation(bet *Bet) error {
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
-	select {
-	case <-signalReceiver:
-		client.sigtermSignalHandler()
-		return nil
-	default:
-		err := client.withNewClientSocketDo(func() error {
-			return client.sendBetInformationAckReceipt(bet)
-		})
-		if err != nil {
-			log.Errorf("action: send_bet | result: fail | client_id: %v", client.config.ID)
-			return err
+	allBetBatchSent, err := client.withEachBetBatchDo(func(betBatch []*Bet) error {
+		select {
+		case <-signalReceiver:
+			client.sigtermSignalHandler()
+			return nil
+		default:
+			err := client.withNewClientSocketDo(func() error {
+				return client.sendBetBatch(betBatch)
+			})
+			if err != nil {
+				return err
+			}
+			return nil
 		}
+	})
+
+	if !allBetBatchSent || err != nil {
+		log.Errorf("action: send_all_bets_to_national_lottery_headquarters | result: fail | client_id: %v", client.config.ID)
+		return err
 	}
 
-	log.Infof("action: send_bet | result: success | client_id: %v", client.config.ID)
+	log.Infof("action: send_all_bets_to_national_lottery_headquarters | result: success | client_id: %v", client.config.ID)
 	return nil
 }

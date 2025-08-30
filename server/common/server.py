@@ -85,8 +85,8 @@ class Server:
                 )
                 OSError("Unexpected disconnection of the client")
 
-            logging.debug(f"action: receive_chuck | result: success | chunk: {chunk}")
-            if chunk.endswith(communication_protocol.DELIMITER.encode("utf-8")):
+            logging.debug(f"action: receive_chunk | result: success | chunk: {chunk}")
+            if chunk.endswith(communication_protocol.END_DELIMITER.encode("utf-8")):
                 all_data_received = True
 
             bytes_received += chunk
@@ -95,24 +95,45 @@ class Server:
         logging.debug(f"action: receive_message | result: success | msg: {message}")
         return message
 
-    # ============================== PRIVATE - HANDLE BET ============================== #
+    # ============================== PRIVATE - HANDLE BET BATCH ============================== #
 
-    def __receive_bet(self, client_connection: socket.socket) -> utils.Bet:
-        logging.info(f"action: receive_bet | result: in_progress")
+    def __send_bet_batch_ack(
+        self, client_connection: socket.socket, batch_size: int
+    ) -> None:
+        logging.info(f"action: send_bet_batch_ack | result: success")
 
-        message = self.__receive_message(client_connection)
-        bet = communication_protocol.decode_bet_message(message)
-
-        logging.info(f"action: receive_bet | result: success")
-        return bet
-
-    def __send_bet_ack(self, client_connection: socket.socket) -> None:
-        logging.info(f"action: send_bet_ack | result: success")
-
-        message = communication_protocol.encode_ack_message("1")
+        message = communication_protocol.encode_ack_message(str(batch_size))
         self.__send_message(client_connection, message)
 
-        logging.info(f"action: send_bet_ack | result: success")
+        logging.info(f"action: send_bet_batch_ack | result: success")
+
+    def __handle_bet_batch_message(
+        self, client_connection: socket.socket, message: str
+    ) -> None:
+        bet_batch = []
+        try:
+            logging.info(f"action: receive_bet_batch | result: in_progress")
+            bet_batch = communication_protocol.decode_bet_batch_message(message)
+            logging.info(f"action: receive_bet_batch | result: success")
+
+            utils.store_bets(bet_batch)
+            self.__send_bet_batch_ack(client_connection, len(bet_batch))
+            logging.info(
+                f"action: apuesta_recibida | result: success | cantidad: {len(bet_batch)}"
+            )
+        except Exception as e:
+            self.__send_bet_batch_ack(client_connection, 0)
+            logging.info(
+                f"action: apuesta_recibida | result: fail | cantidad: {len(bet_batch)}"
+            )
+            raise e
+
+    # ============================== PRIVATE - HANDLE END BET BATCH ============================== #
+
+    def __handle_end_bet_batch_message(self, client_connection: socket.socket) -> None:
+        logging.info(f"action: receive_end_bet_batch | result: in_progress")
+        self.__send_bet_batch_ack(client_connection, 0)
+        logging.info(f"action: receive_end_bet_batch | result: success")
 
     # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
@@ -123,18 +144,17 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
-        try:
-            bet = self.__receive_bet(client_connection)
+        message = self.__receive_message(client_connection)
 
-            utils.store_bets([bet])
-            logging.info(
-                f"action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}"
+        if message.startswith(communication_protocol.BET_MSG_TYPE):
+            self.__handle_bet_batch_message(client_connection, message)
+        elif message.startswith(communication_protocol.END_MSG_TYPE):
+            self.__handle_end_bet_batch_message(client_connection)
+        else:
+            logging.error(
+                f"action: handle_client_connection | result: fail | error: invalid message type",
             )
-
-            self.__send_bet_ack(client_connection)
-        except Exception as e:
-            logging.error(f"action: handle_connection | result: fail | error: {e}")
-            raise e
+            raise ValueError("Invalid message type")
 
     # ============================== PUBLIC ============================== #
 
@@ -149,15 +169,23 @@ class Server:
         logging.info("action: server_startup | result: success")
 
         self._server_running = True
-        with self._server_socket:
+        try:
             while self._server_running:
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
 
-                with client_connection:
+                try:
                     self.__handle_client_connection(client_connection)
+                finally:
+                    client_connection.shutdown(socket.SHUT_RDWR)
+                    client_connection.close()
                     logging.debug("action: client_connection_close | result: success")
+        except Exception as e:
+            logging.error(f"action: server_run | result: fail | error: {e}")
+            raise e
+        finally:
+            self._server_socket.close()
             logging.debug("action: server_socker_close | result: success")
 
         logging.info("action: server_shutdown | result: success")
