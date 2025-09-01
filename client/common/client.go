@@ -29,9 +29,9 @@ type ClientConfig struct {
 
 // Client Entity that encapsulates how
 type Client struct {
-	config         ClientConfig
-	conn           net.Conn
-	clientShutdown bool
+	config        ClientConfig
+	conn          net.Conn
+	clientRunning bool
 }
 
 // ============================== BUILDER ============================== //
@@ -39,7 +39,7 @@ type Client struct {
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
 func NewClient(config ClientConfig) *Client {
-	client := &Client{config: config, clientShutdown: false}
+	client := &Client{config: config, clientRunning: false}
 	return client
 }
 
@@ -48,7 +48,7 @@ func NewClient(config ClientConfig) *Client {
 func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
 
-	client.clientShutdown = true
+	client.clientRunning = false
 
 	if client.conn != nil {
 		client.conn.Close()
@@ -290,6 +290,8 @@ func (client *Client) sendBetBatch(betBatch []*Bet) error {
 func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 	log.Infof("action: send_all_bets_to_national_lottery_headquarters | result: in_progress | client_id: %v", client.config.ID)
 
+	client.clientRunning = true
+
 	signalReceiver := make(chan os.Signal, 1)
 	defer func() {
 		close(signalReceiver)
@@ -297,7 +299,7 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
-	allBetBatchSent, err := client.whileConditionWithEachBetBatchDo(func() bool { return !client.clientShutdown }, func(betBatch []*Bet) error {
+	allBetBatchSent, err := client.whileConditionWithEachBetBatchDo(func() bool { return client.clientRunning }, func(betBatch []*Bet) error {
 		select {
 		case <-signalReceiver:
 			client.sigtermSignalHandler()
