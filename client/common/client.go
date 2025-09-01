@@ -29,8 +29,9 @@ type ClientConfig struct {
 
 // Client Entity that encapsulates how
 type Client struct {
-	config ClientConfig
-	conn   net.Conn
+	config         ClientConfig
+	conn           net.Conn
+	clientShutdown bool
 }
 
 // ============================== BUILDER ============================== //
@@ -38,7 +39,7 @@ type Client struct {
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
 func NewClient(config ClientConfig) *Client {
-	client := &Client{config: config}
+	client := &Client{config: config, clientShutdown: false}
 	return client
 }
 
@@ -46,6 +47,8 @@ func NewClient(config ClientConfig) *Client {
 
 func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
+
+	client.clientShutdown = true
 
 	if client.conn != nil {
 		client.conn.Close()
@@ -219,30 +222,35 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 	return betBatch, nil
 }
 
-func (client *Client) withEachBetBatchDo(function func([]*Bet) error) (bool, error) {
-	allBatchesSent := false
+func (client *Client) whileConditionWithEachBetBatchDo(condition func() bool, function func([]*Bet) error) (bool, error) {
+	allBatchesSuccessfullyRead := false
 
 	err := client.withCsvReaderDo(func(csvReader csv.Reader) error {
-		for {
+		for condition() {
 			betBatch, err := client.readBetBatchFromCsvUsing(csvReader)
 			if err != nil && err != io.EOF {
+				allBatchesSuccessfullyRead = false
 				return err
 			} else if err == io.EOF {
-				allBatchesSent = true
 				if len(betBatch) == 0 {
+					allBatchesSuccessfullyRead = true
 					return nil
 				}
-				return function(betBatch)
+				err := function(betBatch)
+				allBatchesSuccessfullyRead = (err == nil)
+				return err
 			}
 
 			err = function(betBatch)
 			if err != nil {
+				allBatchesSuccessfullyRead = false
 				return err
 			}
 		}
+		return nil
 	})
 
-	return allBatchesSent, err
+	return allBatchesSuccessfullyRead, err
 }
 
 // ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
@@ -289,7 +297,7 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
-	allBetBatchSent, err := client.withEachBetBatchDo(func(betBatch []*Bet) error {
+	allBetBatchSent, err := client.whileConditionWithEachBetBatchDo(func() bool { return !client.clientShutdown }, func(betBatch []*Bet) error {
 		select {
 		case <-signalReceiver:
 			client.sigtermSignalHandler()
