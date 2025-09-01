@@ -59,6 +59,16 @@ func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
 
+func (client *Client) handleSigtermDuring(signalReceiver chan os.Signal, function func() error) error {
+	select {
+	case <-signalReceiver:
+		client.sigtermSignalHandler()
+		return nil
+	default:
+		return function()
+	}
+}
+
 // ============================== PRIVATE - CREATE CLIENT CONNECTION ============================== //
 
 // CreateClientSocket Initializes client socket. In case of
@@ -300,11 +310,7 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
 	allBetBatchSent, err := client.whileConditionWithEachBetBatchDo(func() bool { return client.clientRunning }, func(betBatch []*Bet) error {
-		select {
-		case <-signalReceiver:
-			client.sigtermSignalHandler()
-			return nil
-		default:
+		return client.handleSigtermDuring(signalReceiver, func() error {
 			err := client.withNewClientSocketDo(func() error {
 				return client.sendBetBatch(betBatch)
 			})
@@ -312,7 +318,7 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 				return err
 			}
 			return nil
-		}
+		})
 	})
 
 	if !allBetBatchSent || err != nil {
