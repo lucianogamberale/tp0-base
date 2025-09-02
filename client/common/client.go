@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/op/go-logging"
 )
@@ -25,6 +26,7 @@ type ClientConfig struct {
 	MaxAmountOfBetsOnEachBatch int
 	MaxKiBPerBatch             int
 	AgencyFileName             string
+	WaitLoopPeriod             time.Duration
 }
 
 // Client Entity that encapsulates how
@@ -41,6 +43,12 @@ type Client struct {
 func NewClient(config ClientConfig) *Client {
 	client := &Client{config: config, clientRunning: false}
 	return client
+}
+
+// ============================== PRIVATE - SIGNAL HANDLER ============================== //
+
+func (client *Client) isRunning() bool {
+	return client.clientRunning
 }
 
 // ============================== PRIVATE - SIGNAL HANDLER ============================== //
@@ -130,7 +138,7 @@ func (client *Client) sendMessage(message string) error {
 
 func (client *Client) receiveMessage() (string, error) {
 	reader := bufio.NewReader(client.conn)
-	msg, err := reader.ReadString(END_DELIMITER[0])
+	msg, err := reader.ReadString(END_MSG_DELIMITER[0])
 	if err != nil {
 		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
 			client.config.ID,
@@ -204,7 +212,7 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 
 	betBatch := []*Bet{}
 	amountOfReadBytesOnBatch := 0
-	amountOfReadBytesOnBatch += len(BET_MSG_TYPE) + len(START_DELIMITER) + len(END_DELIMITER)
+	amountOfReadBytesOnBatch += len(BET_MSG_TYPE) + len(START_MSG_DELIMITER) + len(END_MSG_DELIMITER)
 
 	for len(betBatch) < client.config.MaxAmountOfBetsOnEachBatch && amountOfReadBytesOnBatch+MAX_BYTES_BET <= client.config.MaxKiBPerBatch*KiB {
 		bet, err := client.readBetFromCsvUsing(csvReader)
@@ -221,7 +229,7 @@ func (client *Client) readBetBatchFromCsvUsing(csvReader csv.Reader) ([]*Bet, er
 		}
 
 		betBatch = append(betBatch, bet)
-		amountOfReadBytesOnBatch += bet.LengthAsString() + 1
+		amountOfReadBytesOnBatch += bet.LengthWhenEncoded() + 1
 	}
 
 	log.Infof("action: read_bet_batch_from_csv | result: success | client_id: %v | bet_batch_size: %v | bytes_on_batch: %v",
@@ -263,7 +271,7 @@ func (client *Client) whileConditionWithEachBetBatchDo(condition func() bool, fu
 	return allBatchesSuccessfullyRead, err
 }
 
-// ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
+// ============================= PRIVATE - SEND BET BATCHS ============================== //
 
 func (client *Client) sendBetBatch(betBatch []*Bet) error {
 	messageToSend := EncodeBetBatchMessage(betBatch)
@@ -280,7 +288,7 @@ func (client *Client) sendBetBatch(betBatch []*Bet) error {
 	batchSize := len(betBatch)
 	expectedMessage := EncodeAckMessage(fmt.Sprintf("%d", batchSize))
 	if receivedMessage != expectedMessage {
-		log.Errorf("action: ack_message_check | result: fail | client_id: %v | expected: %v | received: %v",
+		log.Errorf("action: ack_bet_message_check | result: fail | client_id: %v | expected: %v | received: %v",
 			client.config.ID,
 			expectedMessage,
 			receivedMessage,
@@ -295,11 +303,166 @@ func (client *Client) sendBetBatch(betBatch []*Bet) error {
 	return nil
 }
 
+func (client *Client) sendAllBetsUsingBatchs(signalReceiver chan os.Signal) (bool, error) {
+	log.Infof("action: send_all_bets_to_lottery | result: in_progress | client_id: %v", client.config.ID)
+
+	allBetBatchSent, err := client.whileConditionWithEachBetBatchDo(
+		client.isRunning,
+		func(betBatch []*Bet) error {
+			return client.handleSigtermDuring(signalReceiver, func() error {
+				return client.sendBetBatch(betBatch)
+			})
+		})
+	if err != nil {
+		log.Errorf("action: send_all_bets_to_lottery | result: in_progress | client_id: %v", client.config.ID)
+		return false, err
+	}
+
+	log.Infof("action: send_all_bets_to_lottery | result: success | client_id: %v", client.config.ID)
+	return allBetBatchSent, nil
+}
+
+// ============================= PRIVATE - SEND NO MORE BETS ============================== //
+
+func (client *Client) sendNoMoreBetsMessage() error {
+	messageToSend := EncodeNoMoreBetsMessage(client.config.ID)
+	err := client.sendMessage(messageToSend)
+	if err != nil {
+		return err
+	}
+
+	receivedMessage, err := client.receiveMessage()
+	if err != nil {
+		return err
+	}
+
+	expectedMessage := EncodeAckMessage(NO_MORE_BETS_MSG_TYPE)
+	if receivedMessage != expectedMessage {
+		log.Errorf("action: ack_no_more_bets_message_check | result: fail | client_id: %v | expected: %v | received: %v",
+			client.config.ID,
+			expectedMessage,
+			receivedMessage,
+		)
+		return errors.New("no more bets ACK message is not as expected")
+	}
+	return nil
+}
+
+func (client *Client) notifyNoMoreBets() error {
+	log.Infof("action: notify_no_more_bets_message | result: in_progress | client_id: %v", client.config.ID)
+	if !client.isRunning() {
+		log.Infof("action: notify_no_more_bets_message | result: fail | client_id: %v", client.config.ID)
+		return nil
+	}
+
+	err := client.sendNoMoreBetsMessage()
+	if err != nil {
+		log.Errorf("action: notify_no_more_bets_message | result: fail | client_id: %v", client.config.ID)
+		return err
+	}
+
+	log.Infof("action: notify_no_more_bets_message | result: success | client_id: %v", client.config.ID)
+	return nil
+}
+
+// ============================= PRIVATE - QUERY FOR WINNERS ============================== //
+
+func (client *Client) tryToAskForWinners() (bool, []string, error) {
+	isDrawHeld := false
+	winners := []string{}
+
+	err := client.withNewClientSocketDo(func() error {
+		messageToSend := EncodeAskForWinnersMessage(client.config.ID)
+		err := client.sendMessage(messageToSend)
+		if err != nil {
+			return err
+		}
+
+		receivedMessage, err := client.receiveMessage()
+		if err != nil {
+			return err
+		}
+
+		switch GetMessageType(receivedMessage) {
+		case WAIT_MSG_TYPE:
+			isDrawHeld = false
+		case WINNERS_MSG_TYPE:
+			isDrawHeld = true
+			winners, err = DecodeWinnersMessage(receivedMessage)
+			if err != nil {
+				return err
+			}
+		default:
+			log.Errorf("action: unknown_message_type | result: fail | client_id: %v | msg: %v",
+				client.config.ID,
+				receivedMessage,
+			)
+			return errors.New("unknown message type received from server")
+		}
+
+		log.Debugf("action: try_ask_for_winners | result: success | client_id: %v | is_draw_held: %v",
+			client.config.ID,
+			isDrawHeld,
+		)
+		return nil
+	})
+
+	return isDrawHeld, winners, err
+}
+
+func (client *Client) whileConditionKeepTryingToAskForWinners(
+	condition func() bool,
+	whenDrawNotHeldFunction func(),
+	whenDrawHeldFunction func(winners []string),
+) error {
+	for condition() {
+		isDrawHeld, winners, err := client.tryToAskForWinners()
+		if err != nil {
+			return err
+		}
+
+		if !isDrawHeld {
+			log.Infof("action: lottery_has_not_held_the_draw_yet | result: success | client_id: %v", client.config.ID)
+			whenDrawNotHeldFunction()
+		} else {
+			log.Infof("action: lottery_held_the_draw | result: success | client_id: %v | winners: %v", client.config.ID, winners)
+			whenDrawHeldFunction(winners)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (client *Client) askForWinners(signalReceiver chan os.Signal) error {
+	log.Infof("action: ask_for_winners | result: in_progress | client_id: %v", client.config.ID)
+
+	err := client.whileConditionKeepTryingToAskForWinners(
+		client.isRunning,
+		func() {
+			client.handleSigtermDuring(signalReceiver, func() error {
+				time.Sleep(client.config.WaitLoopPeriod)
+				return nil
+			})
+		},
+		func(winners []string) {
+			client.handleSigtermDuring(signalReceiver, func() error {
+				log.Infof("action: apuesta_recibida | result: success | cantidad: %v", len(winners))
+				return nil
+			})
+		},
+	)
+	if err != nil {
+		log.Errorf("action: ask_for_winners | result: fail | client_id: %v", client.config.ID)
+		return err
+	}
+
+	log.Infof("action: ask_for_winners | result: success | client_id: %v", client.config.ID)
+	return nil
+}
+
 // ============================== PUBLIC ============================== //
 
-func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
-	log.Infof("action: send_all_bets_to_national_lottery_headquarters | result: in_progress | client_id: %v", client.config.ID)
-
+func (client *Client) SendAllBetsToNationalLotteryHeadquartersThenAskForWinners() error {
 	client.clientRunning = true
 
 	signalReceiver := make(chan os.Signal, 1)
@@ -309,23 +472,17 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquarters() error {
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
-	allBetBatchSent, err := client.whileConditionWithEachBetBatchDo(func() bool { return client.clientRunning }, func(betBatch []*Bet) error {
-		return client.handleSigtermDuring(signalReceiver, func() error {
-			err := client.withNewClientSocketDo(func() error {
-				return client.sendBetBatch(betBatch)
-			})
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-	})
+	err := client.withNewClientSocketDo(func() error {
+		_, err := client.sendAllBetsUsingBatchs(signalReceiver)
+		if err != nil {
+			return err
+		}
 
-	if !allBetBatchSent || err != nil {
-		log.Errorf("action: send_all_bets_to_national_lottery_headquarters | result: fail | client_id: %v", client.config.ID)
+		return client.notifyNoMoreBets()
+	})
+	if err != nil {
 		return err
 	}
 
-	log.Infof("action: send_all_bets_to_national_lottery_headquarters | result: success | client_id: %v", client.config.ID)
-	return nil
+	return client.askForWinners(signalReceiver)
 }

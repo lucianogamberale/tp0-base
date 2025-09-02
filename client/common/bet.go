@@ -1,7 +1,5 @@
 package common
 
-import "fmt"
-
 const (
 	KiB = 1024
 
@@ -22,37 +20,25 @@ const (
 )
 
 type Bet struct {
-	agency    string
-	number    string
-	firstName string
-	lastName  string
-	document  string
-	birthdate string
+	Agency    string
+	Number    string
+	FirstName string
+	LastName  string
+	Document  string
+	Birthdate string
 }
 
 func NewBet(agency string, firstName string, lastName string, document string, birthdate string, number string) *Bet {
 	return &Bet{
-		agency:    agency,
-		firstName: firstName,
-		lastName:  lastName,
-		document:  document,
-		birthdate: birthdate,
-		number:    number,
+		Agency:    agency,
+		FirstName: firstName,
+		LastName:  lastName,
+		Document:  document,
+		Birthdate: birthdate,
+		Number:    number,
 	}
 }
 
-func (bet *Bet) AsString() string {
-	return fmt.Sprintf(
-		`{"agency":"%s","first_name":"%s","last_name":"%s","document":"%s","birthdate":"%s","number":"%s"}`,
-		bet.agency,
-		bet.firstName,
-		bet.lastName,
-		bet.document,
-		bet.birthdate,
-		bet.number,
-	)
-}
-
-func (bet *Bet) LengthAsString() int {
-	return len(bet.AsString())
+func (bet *Bet) LengthWhenEncoded() int {
+	return len(EncodeBet(bet))
 }
