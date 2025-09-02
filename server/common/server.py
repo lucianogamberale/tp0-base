@@ -191,6 +191,9 @@ class Server:
             "ack_no_more_bets",
         )
 
+        if self.__was_draw_held():
+            logging.info("action: sorteo | result: success")
+
     # ============================== PRIVATE - HANDLE ASK FOR WINNERS ============================== #
 
     def __send_winners(self, client_connection: socket.socket, agency: int) -> None:

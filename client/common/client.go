@@ -446,7 +446,7 @@ func (client *Client) askForWinners(signalReceiver chan os.Signal) error {
 		},
 		func(winners []string) {
 			client.handleSigtermDuring(signalReceiver, func() error {
-				log.Infof("action: apuesta_recibida | result: success | cantidad: %v", len(winners))
+				log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %v", len(winners))
 				return nil
 			})
 		},
