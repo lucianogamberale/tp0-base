@@ -270,7 +270,7 @@ class Server:
 
         self._server_running = True
         try:
-            while self._server_running and not self.__all_winners_sent():
+            while self._server_running:
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
