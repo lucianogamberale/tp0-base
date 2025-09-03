@@ -273,7 +273,7 @@ func (client *Client) whileConditionWithEachBetBatchDo(condition func() bool, fu
 
 // ============================= PRIVATE - SEND BET BATCHS ============================== //
 
-func (client *Client) sendBetBatch(betBatch []*Bet) error {
+func (client *Client) sendBetBatchMessage(betBatch []*Bet) error {
 	messageToSend := EncodeBetBatchMessage(betBatch)
 	err := client.sendMessage(messageToSend)
 	if err != nil {
@@ -310,7 +310,7 @@ func (client *Client) sendAllBetsUsingBatchs(signalReceiver chan os.Signal) (boo
 		client.isRunning,
 		func(betBatch []*Bet) error {
 			return client.handleSigtermDuring(signalReceiver, func() error {
-				return client.sendBetBatch(betBatch)
+				return client.sendBetBatchMessage(betBatch)
 			})
 		})
 	if err != nil {
@@ -367,7 +367,7 @@ func (client *Client) notifyNoMoreBets() error {
 
 // ============================= PRIVATE - QUERY FOR WINNERS ============================== //
 
-func (client *Client) tryToAskForWinners() (bool, []string, error) {
+func (client *Client) sendAskForWinnersMessage() (bool, []string, error) {
 	isDrawHeld := false
 	winners := []string{}
 
@@ -416,7 +416,7 @@ func (client *Client) whileConditionKeepTryingToAskForWinners(
 	whenDrawHeldFunction func(winners []string),
 ) error {
 	for condition() {
-		isDrawHeld, winners, err := client.tryToAskForWinners()
+		isDrawHeld, winners, err := client.sendAskForWinnersMessage()
 		if err != nil {
 			return err
 		}
