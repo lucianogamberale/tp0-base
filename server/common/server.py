@@ -290,7 +290,6 @@ class Server:
         """
         logging.info("action: server_startup | result: success")
 
-        i = 0
         self.__set_server_as_running()
         try:
             while self.__is_running() and not self.__all_winners_sent():
@@ -299,8 +298,6 @@ class Server:
                     continue
 
                 try:
-                    logging.info(f"action: new_connection | id: {i}")
-                    i += 1
                     self.__handle_client_connection_using_a_thread(client_connection)
                 except Exception as e:
                     client_connection.close()
