@@ -67,7 +67,11 @@ func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
 
-func (client *Client) handleSigtermDuring(signalReceiver chan os.Signal, function func() error) error {
+func (client *Client) whenNoSigtermReceivedDo(signalReceiver chan os.Signal, function func() error) error {
+	if !client.isRunning() {
+		return nil
+	}
+
 	select {
 	case <-signalReceiver:
 		client.sigtermSignalHandler()
@@ -303,15 +307,13 @@ func (client *Client) sendBetBatchMessage(betBatch []*Bet) error {
 	return nil
 }
 
-func (client *Client) sendAllBetsUsingBatchs(signalReceiver chan os.Signal) (bool, error) {
+func (client *Client) sendAllBetsUsingBetBatchs(signalReceiver chan os.Signal) (bool, error) {
 	log.Infof("action: send_all_bets_to_lottery | result: in_progress | client_id: %v", client.config.ID)
 
 	allBetBatchSent, err := client.whileConditionWithEachBetBatchDo(
 		client.isRunning,
 		func(betBatch []*Bet) error {
-			return client.handleSigtermDuring(signalReceiver, func() error {
-				return client.sendBetBatchMessage(betBatch)
-			})
+			return client.whenNoSigtermReceivedDo(signalReceiver, func() error { return client.sendBetBatchMessage(betBatch) })
 		})
 	if err != nil {
 		log.Errorf("action: send_all_bets_to_lottery | result: in_progress | client_id: %v", client.config.ID)
@@ -348,116 +350,65 @@ func (client *Client) sendNoMoreBetsMessage() error {
 	return nil
 }
 
-func (client *Client) notifyNoMoreBets() error {
+func (client *Client) notifyNoMoreBets(signalReceiver chan os.Signal) error {
 	log.Infof("action: notify_no_more_bets_message | result: in_progress | client_id: %v", client.config.ID)
 	if !client.isRunning() {
-		log.Infof("action: notify_no_more_bets_message | result: fail | client_id: %v", client.config.ID)
 		return nil
 	}
 
-	err := client.sendNoMoreBetsMessage()
-	if err != nil {
-		log.Errorf("action: notify_no_more_bets_message | result: fail | client_id: %v", client.config.ID)
-		return err
-	}
+	return client.whenNoSigtermReceivedDo(signalReceiver, func() error {
+		err := client.sendNoMoreBetsMessage()
+		if err != nil {
+			log.Errorf("action: notify_no_more_bets_message | result: fail | client_id: %v", client.config.ID)
+			return err
+		}
 
-	log.Infof("action: notify_no_more_bets_message | result: success | client_id: %v", client.config.ID)
-	return nil
+		log.Infof("action: notify_no_more_bets_message | result: success | client_id: %v", client.config.ID)
+		return nil
+	})
 }
 
 // ============================= PRIVATE - QUERY FOR WINNERS ============================== //
 
-func (client *Client) sendAskForWinnersMessage() (bool, []string, error) {
-	isDrawHeld := false
-	winners := []string{}
-
-	err := client.withNewClientSocketDo(func() error {
-		messageToSend := EncodeAskForWinnersMessage(client.config.ID)
-		err := client.sendMessage(messageToSend)
-		if err != nil {
-			return err
-		}
-
-		receivedMessage, err := client.receiveMessage()
-		if err != nil {
-			return err
-		}
-
-		switch GetMessageType(receivedMessage) {
-		case WAIT_MSG_TYPE:
-			isDrawHeld = false
-		case WINNERS_MSG_TYPE:
-			isDrawHeld = true
-			winners, err = DecodeWinnersMessage(receivedMessage)
-			if err != nil {
-				return err
-			}
-		default:
-			log.Errorf("action: unknown_message_type | result: fail | client_id: %v | msg: %v",
-				client.config.ID,
-				receivedMessage,
-			)
-			return errors.New("unknown message type received from server")
-		}
-
-		log.Debugf("action: try_ask_for_winners | result: success | client_id: %v | is_draw_held: %v",
-			client.config.ID,
-			isDrawHeld,
-		)
-		return nil
-	})
-
-	return isDrawHeld, winners, err
-}
-
-func (client *Client) whileConditionKeepTryingToAskForWinners(
-	condition func() bool,
-	whenDrawNotHeldFunction func(),
-	whenDrawHeldFunction func(winners []string),
-) error {
-	for condition() {
-		isDrawHeld, winners, err := client.sendAskForWinnersMessage()
-		if err != nil {
-			return err
-		}
-
-		if !isDrawHeld {
-			log.Infof("action: lottery_has_not_held_the_draw_yet | result: success | client_id: %v", client.config.ID)
-			whenDrawNotHeldFunction()
-		} else {
-			log.Infof("action: lottery_held_the_draw | result: success | client_id: %v | winners: %v", client.config.ID, winners)
-			whenDrawHeldFunction(winners)
-			return nil
-		}
+func (client *Client) sendAskForWinnersMessage() ([]string, error) {
+	messageToSend := EncodeAskForWinnersMessage(client.config.ID)
+	err := client.sendMessage(messageToSend)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+
+	receivedMessage, err := client.receiveMessage()
+	if err != nil {
+		return nil, err
+	}
+
+	if GetMessageType(receivedMessage) != WINNERS_MSG_TYPE {
+		log.Errorf("action: unknown_message_type | result: fail | client_id: %v | msg: %v",
+			client.config.ID,
+			receivedMessage,
+		)
+		return nil, errors.New("unknown message type received from server when asking for winners")
+	}
+	return DecodeWinnersMessage(receivedMessage)
 }
 
 func (client *Client) askForWinners(signalReceiver chan os.Signal) error {
 	log.Infof("action: ask_for_winners | result: in_progress | client_id: %v", client.config.ID)
-
-	err := client.whileConditionKeepTryingToAskForWinners(
-		client.isRunning,
-		func() {
-			client.handleSigtermDuring(signalReceiver, func() error {
-				time.Sleep(client.config.WaitLoopPeriod)
-				return nil
-			})
-		},
-		func(winners []string) {
-			client.handleSigtermDuring(signalReceiver, func() error {
-				log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %v", len(winners))
-				return nil
-			})
-		},
-	)
-	if err != nil {
-		log.Errorf("action: ask_for_winners | result: fail | client_id: %v", client.config.ID)
-		return err
+	if !client.isRunning() {
+		return nil
 	}
 
-	log.Infof("action: ask_for_winners | result: success | client_id: %v", client.config.ID)
-	return nil
+	return client.whenNoSigtermReceivedDo(signalReceiver, func() error {
+		winners, err := client.sendAskForWinnersMessage()
+		if err != nil {
+			log.Errorf("action: ask_for_winners | result: fail | client_id: %v", client.config.ID)
+			return err
+		}
+
+		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %v", len(winners))
+		log.Infof("action: ask_for_winners | result: success | client_id: %v", client.config.ID)
+		return nil
+	})
 }
 
 // ============================== PUBLIC ============================== //
@@ -472,17 +423,17 @@ func (client *Client) SendAllBetsToNationalLotteryHeadquartersThenAskForWinners(
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
-	err := client.withNewClientSocketDo(func() error {
-		_, err := client.sendAllBetsUsingBatchs(signalReceiver)
+	return client.withNewClientSocketDo(func() error {
+		_, err := client.sendAllBetsUsingBetBatchs(signalReceiver)
 		if err != nil {
 			return err
 		}
 
-		return client.notifyNoMoreBets()
-	})
-	if err != nil {
-		return err
-	}
+		err = client.notifyNoMoreBets(signalReceiver)
+		if err != nil {
+			return err
+		}
 
-	return client.askForWinners(signalReceiver)
+		return client.askForWinners(signalReceiver)
+	})
 }
