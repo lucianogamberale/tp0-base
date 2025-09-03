@@ -2,6 +2,8 @@ server:
   address: "server:12345"
 log:
   level: "INFO"
+loop:
+  period: "1s"
 batch:
   maxKiB: 8
   maxAmount: 10

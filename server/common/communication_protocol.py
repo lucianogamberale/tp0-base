@@ -8,7 +8,6 @@ BET_MSG_TYPE = "BET"
 NO_MORE_BETS_MSG_TYPE = "NMB"
 ACK_MSG_TYPE = "ACK"
 ASK_FOR_WINNERS_MSG_TYPE = "ASK"
-WAIT_MSG_TYPE = "WIT"
 WINNERS_MSG_TYPE = "WIN"
 
 START_MSG_DELIMITER = "["
@@ -75,6 +74,16 @@ def __decode_bet(payload: str) -> utils.Bet:
     return bet
 
 
+def decode_message_type(message: str) -> str:
+    if len(message) < MESSAGE_TYPE_LENGTH:
+        logging.error(
+            f"action: decode_message_type | result: fail | error: message too short"
+        )
+        raise ValueError("Message too short to contain a valid message type")
+
+    return message[:MESSAGE_TYPE_LENGTH]
+
+
 def decode_bet_batch_message(message: str) -> list[utils.Bet]:
     # INPUT: BET[{"agency": "001","first_name":"John","last_name":"Doe","document":"12345678","birthdate":"1990-01-01","number": 42};{...}; ...]
     __assert_message_format(message, BET_MSG_TYPE)
@@ -136,7 +145,3 @@ def encode_winners_message(winners: list[utils.Bet]) -> str:
     encoded_payload = [f'"{winner.document}"' for winner in winners]
     encoded_payload = WINNERS_SEPARATOR.join(encoded_payload)
     return __encode_message(WINNERS_MSG_TYPE, encoded_payload)
-
-
-def encode_wait_message() -> str:
-    return __encode_message(WAIT_MSG_TYPE, "")
