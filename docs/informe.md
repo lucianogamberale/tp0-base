@@ -67,6 +67,4 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 
   3.  Modificar un valor en `config/server/config.ini` en la máquina _host_.
 
-  4.  Reiniciar los servicios: `make docker-compose-down && make docker-compose-up`
-
-  5.  Verificar en los logs (`make docker-compose-logs`) que el servidor ha tomado la nueva configuración sin necesidad de reconstruir la imagen.
+  4.  Verificar dentro de del container correspondiente que se modificó el archivo. Para esto nos adentramos en el container `docker exec -it server sh` y podemos realizar un `cat config.ini`.
