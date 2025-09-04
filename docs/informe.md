@@ -14,9 +14,7 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 
 ### Ejercicio 1: Generar Docker Compose configurable
 
-- **Objetivo:**
-
-  Crear un script `generar-compose.sh` que genere un archivo `docker-compose.yaml` con una cantidad configurable de clientes.
+- **Objetivo:** Crear un script `generar-compose.sh` que genere un archivo `docker-compose.yaml` con una cantidad configurable de clientes.
 
 - **Implementación:**
 
@@ -45,9 +43,7 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 
 ### Ejercicio 2: Configuración Externa
 
-- **Objetivo:**
-
-  Modificar el sistema para que los cambios en los archivos de configuración (`config.ini` para el servidor y `config.yaml` para el cliente) no requieran reconstruir las imágenes de Docker.
+- **Objetivo:** Modificar el sistema para que los cambios en los archivos de configuración (`config.ini` para el servidor y `config.yaml` para el cliente) no requieran reconstruir las imágenes de Docker.
 
 - **Implementación:**
 
