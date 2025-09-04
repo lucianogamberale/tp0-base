@@ -209,9 +209,9 @@ class Server:
         agency = communication_protocol.decode_ask_for_winners_message(message)
 
         if self._draw_barrier.wait() == 0:
-            self.__set_draw_as_held()
             logging.info("action: sorteo | result: success")
 
+        self.__set_draw_as_held()
         self.__send_winners(client_connection, agency)
 
         logging.info(f"action: handle_ask_for_winners | result: success")
@@ -235,7 +235,6 @@ class Server:
                 self.__handle_no_more_bets_message(client_connection, message)
             elif message.startswith(communication_protocol.ASK_FOR_WINNERS_MSG_TYPE):
                 self.__handle_ask_for_winners(client_connection, message)
-                break
             else:
                 raise ValueError(
                     f'Invalid message type received from client "{communication_protocol.decode_message_type(message)}"'
