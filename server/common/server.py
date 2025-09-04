@@ -14,17 +14,28 @@ class Server:
         self._server_socket.bind(("", port))
         self._server_socket.listen(listen_backlog)
 
-        self._server_running = False
+        self.__set_server_as_not_running()
+
         signal.signal(signal.SIGTERM, self.__sigterm_signal_handler)
+
+    # ============================== PRIVATE - ACCESSING ============================== #
+
+    def __is_running(self) -> bool:
+        return self._server_running
+
+    def __set_server_as_not_running(self) -> None:
+        self._server_running = False
+
+    def __set_server_as_running(self) -> None:
+        self._server_running = True
 
     # ============================== PRIVATE - SIGNAL HANDLER ============================== #
 
     def __sigterm_signal_handler(self, signum, frame):
         logging.info("action: sigterm_signal_handler | result: in_progress")
 
-        self._server_running = False
+        self.__set_server_as_not_running()
 
-        self._server_socket.shutdown(socket.SHUT_RDWR)
         self._server_socket.close()
         logging.debug("action: sigterm_server_socket_close | result: success")
 
@@ -47,7 +58,7 @@ class Server:
             )
             client_connection, addr = self._server_socket.accept()
             logging.info(
-                f"action: accept_connections | result: success | ip: {addr[0]}"
+                f"action: accept_connections | result: success | ip: {addr[0]}",
             )
             return client_connection
         except OSError as e:
@@ -99,16 +110,23 @@ class Server:
         """
         logging.info("action: server_startup | result: success")
 
-        self._server_running = True
-        with self._server_socket:
-            while self._server_running:
+        self.__set_server_as_running()
+        try:
+            while self.__is_running():
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
 
-                with client_connection:
+                try:
                     self.__handle_client_connection(client_connection)
+                finally:
+                    client_connection.close()
                     logging.debug("action: client_connection_close | result: success")
+        except Exception as e:
+            logging.error(f"action: server_run | result: fail | error: {e}")
+            raise e
+        finally:
+            self._server_socket.close()
             logging.debug("action: server_socker_close | result: success")
 
         logging.info("action: server_shutdown | result: success")

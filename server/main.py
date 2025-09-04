@@ -83,6 +83,7 @@ def main():
     # Initialize server and start server loop
     server = Server(port, listen_backlog)
     server.run()
+    logging.info("action: exit | result: success")
 
 
 if __name__ == "__main__":
