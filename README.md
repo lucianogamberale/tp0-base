@@ -7,12 +7,12 @@
 
 Para poder acceder al enunciado del trabajo práctico, haga click [aquí](./docs/enunciado.md).
 
-
 # Informe de Resolución
 
 El informe técnico detalla las decisiones de diseño y la implementación de cada ejercicio, incluyendo el protocolo de comunicación y los mecanismos de concurrencia utilizados. Además, se indica cómo debe ser ejecutado cada ejericio. Para acceder al informe, haga click [aquí](./docs/informe.md).
 
 ---
+
 ---
 
 <br>
@@ -28,4 +28,5 @@ Gamberale Luciano Martín - Padrón 105892
 </p>
 
 ---
+
 ---
