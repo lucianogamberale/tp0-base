@@ -1,7 +1,6 @@
 import signal
 import socket
 import logging
-import json
 from typing import Optional
 
 from common import utils, communication_protocol
@@ -11,23 +10,36 @@ class Server:
 
     # ============================== INITIALIZE ============================== #
 
-    def __init__(self, port, listen_backlog):
-        # Initialize server socket
+    def __init__(self, port, listen_backlog, number_of_agencies: int) -> None:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(("", port))
         self._server_socket.listen(listen_backlog)
 
-        self._server_running = False
+        self._number_of_agencies = number_of_agencies
+        self._number_of_finished_agencies = 0
+
+        self.__set_server_as_not_running()
+
         signal.signal(signal.SIGTERM, self.__sigterm_signal_handler)
+
+    # ============================== PRIVATE - ACCESSING ============================== #
+
+    def __is_running(self) -> bool:
+        return self._server_running
+
+    def __set_server_as_not_running(self) -> None:
+        self._server_running = False
+
+    def __set_server_as_running(self) -> None:
+        self._server_running = True
 
     # ============================== PRIVATE - SIGNAL HANDLER ============================== #
 
     def __sigterm_signal_handler(self, signum, frame):
         logging.info("action: sigterm_signal_handler | result: in_progress")
 
-        self._server_running = False
+        self.__set_server_as_not_running()
 
-        self._server_socket.shutdown(socket.SHUT_RDWR)
         self._server_socket.close()
         logging.debug("action: sigterm_server_socket_close | result: success")
 
@@ -83,10 +95,12 @@ class Server:
                 logging.error(
                     f"action: receive_message | result: fail | error: unexpected disconnection",
                 )
-                OSError("Unexpected disconnection of the client")
+                raise OSError("Unexpected disconnection of the client")
 
-            logging.debug(f"action: receive_chunk | result: success | chunk: {chunk}")
-            if chunk.endswith(communication_protocol.END_DELIMITER.encode("utf-8")):
+            logging.debug(
+                f"action: receive_chunk | result: success | chunk size: {len(chunk)}"
+            )
+            if chunk.endswith(communication_protocol.END_MSG_DELIMITER.encode("utf-8")):
                 all_data_received = True
 
             bytes_received += chunk
@@ -95,38 +109,73 @@ class Server:
         logging.debug(f"action: receive_message | result: success | msg: {message}")
         return message
 
+    # ============================== PRIVATE - CHECK AGENCIES ============================== #
+
+    def __all_agencies_finished(self) -> bool:
+        return self._number_of_finished_agencies == self._number_of_agencies
+
+    # ============================== PRIVATE - SEND ACK ============================== #
+
+    def __send_ack_message(
+        self, client_connection: socket.socket, message: str, logging_action: str
+    ) -> None:
+        logging.debug(f"action: {logging_action} | result: in_progress")
+
+        message = communication_protocol.encode_ack_message(message)
+        self.__send_message(client_connection, message)
+
+        logging.debug(f"action: {logging_action} | result: success")
+
     # ============================== PRIVATE - HANDLE BET BATCH ============================== #
 
     def __send_bet_batch_ack(
         self, client_connection: socket.socket, batch_size: int
     ) -> None:
-        logging.info(f"action: send_bet_batch_ack | result: success")
-
-        message = communication_protocol.encode_ack_message(str(batch_size))
-        self.__send_message(client_connection, message)
-
-        logging.info(f"action: send_bet_batch_ack | result: success")
+        self.__send_ack_message(
+            client_connection, str(batch_size), "send_bet_batch_ack"
+        )
 
     def __handle_bet_batch_message(
         self, client_connection: socket.socket, message: str
     ) -> None:
         bet_batch = []
         try:
-            logging.info(f"action: receive_bet_batch | result: in_progress")
-            bet_batch = communication_protocol.decode_bet_batch_message(message)
-            logging.info(f"action: receive_bet_batch | result: success")
+            logging.info(f"action: handle_bet_batch_message | result: in_progress")
 
+            bet_batch = communication_protocol.decode_bet_batch_message(message)
+            if len(bet_batch) == 0:
+                raise ValueError("Empty bet batch received")
             utils.store_bets(bet_batch)
             self.__send_bet_batch_ack(client_connection, len(bet_batch))
             logging.info(
                 f"action: apuesta_recibida | result: success | cantidad: {len(bet_batch)}"
             )
+
+            logging.info(f"action: handle_bet_batch_message | result: success")
         except Exception as e:
             self.__send_bet_batch_ack(client_connection, 0)
-            logging.info(
-                f"action: apuesta_recibida | result: fail | cantidad: {len(bet_batch)}"
+            logging.error(
+                f"action: handle_bet_batch_message | result: fail | error: {e}"
             )
             raise e
+
+    # ============================== PRIVATE - HANDLE NO MORE BETS ============================== #
+
+    def __handle_no_more_bets_message(
+        self, client_connection: socket.socket, message: str
+    ) -> None:
+        logging.info(f"action: handle_no_more_bets_message | result: in_progress")
+
+        communication_protocol.decode_no_more_bets_message(message)
+        self.__send_ack_message(
+            client_connection,
+            communication_protocol.NO_MORE_BETS_MSG_TYPE,
+            "ack_no_more_bets",
+        )
+
+        logging.info(f"action: handle_no_more_bets_message | result: success")
+
+        self._number_of_finished_agencies += 1
 
     # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
@@ -137,15 +186,19 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
-        message = self.__receive_message(client_connection)
+        while self.__is_running():
+            message = self.__receive_message(client_connection)
 
-        if message.startswith(communication_protocol.BET_MSG_TYPE):
-            self.__handle_bet_batch_message(client_connection, message)
-        else:
-            logging.error(
-                f"action: handle_client_connection | result: fail | error: invalid message type",
-            )
-            raise ValueError("Invalid message type")
+            if message.startswith(communication_protocol.BET_MSG_TYPE):
+                self.__handle_bet_batch_message(client_connection, message)
+            elif message.startswith(communication_protocol.NO_MORE_BETS_MSG_TYPE):
+                self.__handle_no_more_bets_message(client_connection, message)
+                break
+            else:
+                logging.error(
+                    f"action: handle_client_connection | result: fail | error: invalid message type",
+                )
+                raise ValueError("Invalid message type")
 
     # ============================== PUBLIC ============================== #
 
@@ -159,9 +212,9 @@ class Server:
         """
         logging.info("action: server_startup | result: success")
 
-        self._server_running = True
+        self.__set_server_as_running()
         try:
-            while self._server_running:
+            while self._server_running and not self.__all_agencies_finished():
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
@@ -169,7 +222,6 @@ class Server:
                 try:
                     self.__handle_client_connection(client_connection)
                 finally:
-                    client_connection.shutdown(socket.SHUT_RDWR)
                     client_connection.close()
                     logging.debug("action: client_connection_close | result: success")
         except Exception as e:
