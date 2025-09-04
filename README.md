@@ -2,16 +2,16 @@
 ---
 
 <p align="center">
-  <font size="+3">
-    TP0: Docker + Comunicaciones + Concurrencia
-    <br>
-  </font>
-  <font size="+1">
-    <br>
-    Gamberale Luciano Martín - Padrón 105892
-    <br>
-    2c 2025
-  </font>
+<font size="+3">
+TP0: Docker + Comunicaciones + Concurrencia
+<br>
+</font>
+<font size="+1">
+<br>
+Gamberale Luciano Martín - Padrón 105892
+<br>
+2c 2025
+</font>
 </p>
 
 ---
