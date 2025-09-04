@@ -211,3 +211,71 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
       server   | 2025-09-04 17:43:41 INFO     action: server_shutdown | result: success
       server   | 2025-09-04 17:43:41 INFO     action: exit | result: success
       ```
+
+### Ejercicio 5: Lotería Nacional - Apuesta Simple
+
+- **Objetivo:** Adaptar el sistema al caso de uso de la "Lotería Nacional". Los clientes (agencias) deben enviar los datos de una apuesta individual (leída desde variables de entorno) al servidor, que se encargará de almacenarla. La comunicación debe seguir un protocolo definido.
+
+- **Implementación (Cliente - Go):**
+  La lógica del cliente fue refactorizada para enviar una única apuesta estructurada y verificar su correcta recepción por parte del servidor.
+
+  1.  **Modelo de Dominio (`Bet`):** Se crea el struct `Bet` que modela los datos de una apuesta (agencia, nombre, DNI, etc.). La carga de esta estructura se realizar a partir de variables de entorno que fueron configuradas en el `docker-compose-dev.yaml`.
+
+  2.  **Protocolo de Comunicación:** El cambio más significativo es la implementación de un protocolo de comunicación formal, encapsulado en el package `communicationProtocol.go`. Este protocolo define la estructura de todos los mensajes intercambiados con el servidor. El protocolo de comunicación se explicará con mayor lujo de detalle mas adealante.
+
+  3.  **Serialización de Datos:** Antes de enviar una apuesta, los datos de la struct `Bet` se serializan a un formato de texto específico definido por el protocolo. La función `EncodeBetMessage` se encarga de transformar la apuesta en un string con el formato `BET[{"campo":"valor",...}]`.
+
+  4.  **Flujo de Envío y Confirmación (ACK):** El flujo de comunicación para enviar una apuesta es ahora más robusto:
+      - El cliente envía el mensaje serializado de la apuesta.
+      - A continuación, **espera activamente una respuesta** del servidor.
+      - Se implementó una verificación de **Acknowledgement (ACK)**. El cliente espera recibir un mensaje específico del servidor (en este caso, `ACK[1]`) que confirma que la apuesta fue recibida y procesada correctamente.
+      - Si la respuesta no es el ACK esperado, el cliente registra un error. De lo contrario, imprime el log de éxito `action: apuesta_enviada | result: success ...` requerido por la consigna.
+
+  Este mecanismo de ACK es fundamental, ya que le da al cliente la certeza de que su operación fue completada con éxito en el servidor, en lugar de solo enviarla "a ciegas".
+
+- **Implementación (Servidor - Python):**
+  El servidor fue modificado para entender el nuevo protocolo, procesar las apuestas recibidas y confirmar su recepción.
+
+  1.  **Adherencia al Protocolo:** El servidor ahora utiliza un módulo `communication_protocol.py` que contiene la lógica para decodificar los mensajes entrantes.
+
+  2.  **Deserialización de Datos:** Al recibir datos de un cliente, el servidor realiza el proceso inverso al del cliente:
+
+      - Verifica que el tipo de mensaje sea `BET`.
+      - Extrae el `PAYLOAD` del mensaje.
+      - Parsea la cadena de texto `{"campo":"valor",...}` para reconstruir un objeto `Bet` en memoria con todos los datos de la apuesta.
+
+  3.  **Lógica de Negocio y Persistencia:** Una vez que la apuesta es deserializada y validada, el servidor invoca la función provista `utils.store_bets()` para almacenar la apuesta de forma persistente. A continuación, emite el log requerido: `action: apuesta_almacenada | result: success ...`.
+
+  4.  **Envío de Confirmación (ACK):** Para completar el flujo, después de almacenar la apuesta, el servidor construye y envía un mensaje `ACK[1]` al cliente. Este paso es crucial para notificarle al cliente que la operación fue exitosa.
+
+  5.  **Manejo de I/O Robusto:** Se mejoró el manejo de la comunicación para evitar fenómenos de lecturas/escrituras cortas (_short-reads/writes_). La recepción de mensajes se realiza en un bucle que acumula _chunks_ hasta recibir un delimitador, y el envío se realiza con `sendall()`, que garantiza el envío de todos los bytes.
+
+- **Ejecución:**
+  1.  Posicionarse en la rama: `git checkout ej5`.
+  2.  Levantar los servicios: `make docker-compose-up`.
+  3.  Observar los logs (`make docker-compose-logs`). Se verá la secuencia de logs `apuesta_enviada` de cada cliente, seguida de su correspondiente `apuesta_almacenada` en el servidor. Una vez que el servidor procese las 5 apuestas, finalizará su ejecución.
+
+---
+
+## Aspectos de Diseño
+
+### Protocolo de Comunicación
+
+Para este trabajo práctico se diseñó e implementó un protocolo de comunicación basado en el intercambio de mensajes con una estructura definida.
+
+- **Formato General del Mensaje:**
+  Todos los mensajes siguen la estructura `TIPO[PAYLOAD]`, donde:
+
+  - **`TIPO`**: Un string de 3 caracteres que identifica la naturaleza del mensaje (ej: `BET`, `ACK`).
+  - **`PAYLOAD`**: El contenido del mensaje, delimitado por corchetes `[]`.
+
+- **Tipos de Mensajes (Ejercicio 5):**
+
+  - **`BET`**: Mensaje enviado por el cliente para registrar una o más apuestas.
+    - **Payload:** Una o más apuestas serializadas. Para una única apuesta, el formato es `{"agency":"<valor>","first_name":"<valor>",...}`.
+  - **`ACK`**: Mensaje enviado por el servidor para confirmar la recepción y procesamiento exitoso de un mensaje previo.
+    - **Payload:** Generalmente un número que indica la cantidad de items procesados. Para este ejercicio, es `1`.
+
+- **Ejemplo de Interacción:**
+  1.  **Cliente -> Servidor:** `BET[{"agency":"1","first_name":"Luciano",...}]`
+  2.  **Servidor -> Cliente:** `ACK[1]`
