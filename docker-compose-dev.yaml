@@ -6,6 +6,7 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
+      - CLIENTS_AMOUNT=5
     networks:
       - testing_net
     volumes:
@@ -32,6 +33,11 @@ services:
         source: ./client/config.yaml
         target: /config.yaml
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -53,6 +59,11 @@ services:
         source: ./client/config.yaml
         target: /config.yaml
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -74,6 +85,11 @@ services:
         source: ./client/config.yaml
         target: /config.yaml
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -95,6 +111,11 @@ services:
         source: ./client/config.yaml
         target: /config.yaml
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 
@@ -116,6 +137,11 @@ services:
         source: ./client/config.yaml
         target: /config.yaml
         read_only: true
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 1
     depends_on:
       - server
 

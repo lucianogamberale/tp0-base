@@ -1,7 +1,6 @@
 import signal
 import socket
 import logging
-import json
 from typing import Optional
 
 from common import utils, communication_protocol
@@ -11,23 +10,37 @@ class Server:
 
     # ============================== INITIALIZE ============================== #
 
-    def __init__(self, port, listen_backlog):
+    def __init__(self, port, listen_backlog, number_of_agencies: int) -> None:
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(("", port))
         self._server_socket.listen(listen_backlog)
 
-        self._server_running = False
+        self._number_of_agencies = number_of_agencies
+        self._number_of_finished_agencies = 0
+
+        self.__set_server_as_not_running()
+
         signal.signal(signal.SIGTERM, self.__sigterm_signal_handler)
+
+    # ============================== PRIVATE - ACCESSING ============================== #
+
+    def __is_running(self) -> bool:
+        return self._server_running
+
+    def __set_server_as_not_running(self) -> None:
+        self._server_running = False
+
+    def __set_server_as_running(self) -> None:
+        self._server_running = True
 
     # ============================== PRIVATE - SIGNAL HANDLER ============================== #
 
     def __sigterm_signal_handler(self, signum, frame):
         logging.info("action: sigterm_signal_handler | result: in_progress")
 
-        self._server_running = False
+        self.__set_server_as_not_running()
 
-        self._server_socket.shutdown(socket.SHUT_RDWR)
         self._server_socket.close()
         logging.debug("action: sigterm_server_socket_close | result: success")
 
@@ -83,10 +96,12 @@ class Server:
                 logging.error(
                     f"action: receive_message | result: fail | error: unexpected disconnection",
                 )
-                OSError("Unexpected disconnection of the client")
+                raise OSError("Unexpected disconnection of the client")
 
-            logging.debug(f"action: receive_chuck | result: success | chunk: {chunk}")
-            if chunk.endswith(communication_protocol.DELIMITER.encode("utf-8")):
+            logging.debug(
+                f"action: receive_chunk | result: success | chunk size: {len(chunk)}"
+            )
+            if chunk.endswith(communication_protocol.END_MSG_DELIMITER.encode("utf-8")):
                 all_data_received = True
 
             bytes_received += chunk
@@ -94,6 +109,11 @@ class Server:
         message = bytes_received.decode("utf-8")
         logging.debug(f"action: receive_message | result: success | msg: {message}")
         return message
+
+    # ============================== PRIVATE - CHECK AGENCIES ============================== #
+
+    def __all_agencies_finished(self) -> bool:
+        return self._number_of_finished_agencies == self._number_of_agencies
 
     # ============================== PRIVATE - HANDLE BET ============================== #
 
@@ -132,6 +152,8 @@ class Server:
             )
 
             self.__send_bet_ack(client_connection)
+
+            self._number_of_finished_agencies += 1
         except Exception as e:
             logging.error(f"action: handle_connection | result: fail | error: {e}")
             raise e
@@ -148,16 +170,23 @@ class Server:
         """
         logging.info("action: server_startup | result: success")
 
-        self._server_running = True
-        with self._server_socket:
-            while self._server_running:
+        self.__set_server_as_running()
+        try:
+            while self.__is_running() and not self.__all_agencies_finished():
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
 
-                with client_connection:
+                try:
                     self.__handle_client_connection(client_connection)
+                finally:
+                    client_connection.close()
                     logging.debug("action: client_connection_close | result: success")
+        except Exception as e:
+            logging.error(f"action: server_run | result: fail | error: {e}")
+            raise e
+        finally:
+            self._server_socket.close()
             logging.debug("action: server_socker_close | result: success")
 
         logging.info("action: server_shutdown | result: success")

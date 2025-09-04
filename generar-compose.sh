@@ -27,6 +27,7 @@ function add-name() {
 
 function add-server-service() {
   local compose_filename=$1
+  local clients_amount=$2
 
   add-line $compose_filename "  server:"
   add-line $compose_filename "    container_name: server"
@@ -34,6 +35,7 @@ function add-server-service() {
   add-line $compose_filename "    entrypoint: python3 /main.py"
   add-line $compose_filename "    environment:"
   add-line $compose_filename "      - PYTHONUNBUFFERED=1"
+  add-line $compose_filename "      - CLIENTS_AMOUNT=$clients_amount"
   add-line $compose_filename "    networks:"
   add-line $compose_filename "      - testing_net"
   add-line $compose_filename "    volumes:"
@@ -65,18 +67,24 @@ function add-client-service() {
   add-line $compose_filename "        source: ./client/config.yaml"
   add-line $compose_filename "        target: /config.yaml"
   add-line $compose_filename "        read_only: true"
+  add-line $compose_filename "    deploy:"
+  add-line $compose_filename "      restart_policy:"
+  add-line $compose_filename "        condition: on-failure"
+  add-line $compose_filename "        delay: 5s"
+  add-line $compose_filename "        max_attempts: 1"
   add-line $compose_filename "    depends_on:"
   add-line $compose_filename "      - server"
 }
 
 function add-services() {
   local compose_filename=$1
+  local clients_amount=$2
 
   add-line $compose_filename "services:"
 
-  add-server-service $compose_filename
+  add-server-service $compose_filename $clients_amount
   
-  for (( i=1; i<=clients_amount; i++ )); do
+  for (( i=1; i<=$clients_amount; i++ )); do
     add-empty-line $compose_filename
     add-client-service $compose_filename $i
   done

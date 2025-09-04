@@ -1,21 +1,70 @@
-import json
-import logging
-
 from common import utils
 
-DELIMITER = "]"
+MESSAGE_TYPE_LENGTH = 3
 
-BET_MSG_HEADER = "BET["
-ACK_MSG_HEADER = "ACK["
+ACK_MSG_TYPE = "ACK"
+BET_MSG_TYPE = "BET"
+
+START_MSG_DELIMITER = "["
+END_MSG_DELIMITER = "]"
+
+START_BET_DELIMITER = "{"
+END_BET_DELIMITER = "}"
+BET_FIELDS_SEPARATOR = ","
 
 
-def decode_bet_message(message: str) -> utils.Bet:
-    if not (message.startswith(BET_MSG_HEADER) and message.endswith(DELIMITER)):
-        logging.error(f"action: receive_bet | result: fail | error: invalid format")
-        raise ValueError("Unexpected message bet format")
+# ============================= DECODE ============================== #
 
-    bet_data = message[4:-1]
-    bet_data = json.loads(bet_data)
+
+def decode_message_type(message: str) -> str:
+    if len(message) < MESSAGE_TYPE_LENGTH:
+        raise ValueError("Message too short to contain a valid message type")
+    return message[:MESSAGE_TYPE_LENGTH]
+
+
+def __assert_message_format(message: str, expected_message_type: str) -> None:
+    received_message_type = decode_message_type(message)
+    if received_message_type != expected_message_type:
+        raise ValueError(
+            f"Unexpected message type. Expected: {expected_message_type}, Received: {received_message_type}",
+        )
+
+    if not (
+        message.startswith(expected_message_type + START_MSG_DELIMITER)
+        and message.endswith(END_MSG_DELIMITER)
+    ):
+        raise ValueError("Unexpected message format")
+
+
+def __get_message_payload(message: str) -> str:
+    # remove message type
+    payload = message[MESSAGE_TYPE_LENGTH:]
+
+    # remove message delimiters
+    payload = payload[len(START_MSG_DELIMITER) : -len(END_MSG_DELIMITER)]
+
+    return payload
+
+
+def __decode_field(key_value_pair: str) -> tuple[str, str]:
+    key, value = key_value_pair.split(":", 1)
+    key = key.strip('"')
+    value = value.strip('"')
+    return key, value
+
+
+def __decode_bet(payload: str) -> utils.Bet:
+    # INPUT: {"agency":"1","first_name":"John","last_name":"Doe","document":"12345678","birthdate":"1990-01-01","number":"42"}
+    payload = payload.strip(START_BET_DELIMITER)
+    payload = payload.strip(END_BET_DELIMITER)
+
+    key_value_pairs = payload.split(BET_FIELDS_SEPARATOR)
+
+    bet_data = {}
+    for key_value_pair in key_value_pairs:
+        key, value = __decode_field(key_value_pair)
+        bet_data[key] = value
+
     bet = utils.Bet(
         agency=bet_data["agency"],
         first_name=bet_data["first_name"],
@@ -27,5 +76,24 @@ def decode_bet_message(message: str) -> utils.Bet:
     return bet
 
 
+def decode_bet_message(message: str) -> utils.Bet:
+    # INPUT: BET[{"agency": "001","first_name":"John","last_name":"Doe","document":"12345678","birthdate":"1990-01-01","number": 42};{...}; ...]
+    __assert_message_format(message, BET_MSG_TYPE)
+    bet_entry = __get_message_payload(message)
+
+    return __decode_bet(bet_entry)
+
+
+# ============================= ENCODE ============================== #
+
+
+def __encode_message(message_type: str, payload: str) -> str:
+    encoded_payload = message_type
+    encoded_payload += START_MSG_DELIMITER
+    encoded_payload += payload
+    encoded_payload += END_MSG_DELIMITER
+    return encoded_payload
+
+
 def encode_ack_message(message: str) -> str:
-    return ACK_MSG_HEADER + message + DELIMITER
+    return __encode_message(ACK_MSG_TYPE, message)

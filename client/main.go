@@ -123,8 +123,10 @@ func main() {
 	)
 
 	client := common.NewClient(clientConfig)
-	err = client.SendBetInformation(bet)
+	err = client.SendBetToNationalLotteryHeadquarters(bet)
 	if err != nil {
-		log.Fatalf("%s", err)
+		log.Fatalf("action: unexpected_error | result: fail | error: %s", err)
 	}
+
+	log.Infof("action: exit | result: success | client_id: %v", v.GetString("id"))
 }

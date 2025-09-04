@@ -3,6 +3,7 @@ package common
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -15,31 +16,36 @@ var log = logging.MustGetLogger("log")
 
 // ============================== STRUCT DEFINITION ============================== //
 
-// ClientConfig Configuration used by the client
 type ClientConfig struct {
 	ID            string
 	ServerAddress string
 }
 
-// Client Entity that encapsulates how
 type Client struct {
-	config ClientConfig
-	conn   net.Conn
+	config        ClientConfig
+	conn          net.Conn
+	clientRunning bool
 }
 
 // ============================== BUILDER ============================== //
 
-// NewClient Initializes a new client receiving the configuration
-// as a parameter
 func NewClient(config ClientConfig) *Client {
-	client := &Client{config: config}
+	client := &Client{config: config, clientRunning: false}
 	return client
+}
+
+// ============================== PRIVATE - SIGNAL HANDLER ============================== //
+
+func (client *Client) isRunning() bool {
+	return client.clientRunning
 }
 
 // ============================== PRIVATE - SIGNAL HANDLER ============================== //
 
 func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: in_progress | client_id: %v", client.config.ID)
+
+	client.clientRunning = false
 
 	if client.conn != nil {
 		client.conn.Close()
@@ -50,6 +56,20 @@ func (client *Client) sigtermSignalHandler() {
 	log.Infof("action: sigterm_signal_handler | result: success | client_id: %v", client.config.ID)
 }
 
+func (client *Client) whenNoSigtermReceivedDo(signalReceiver chan os.Signal, function func() error) error {
+	if !client.isRunning() {
+		return nil
+	}
+
+	select {
+	case <-signalReceiver:
+		client.sigtermSignalHandler()
+		return nil
+	default:
+		return function()
+	}
+}
+
 // ============================== PRIVATE - CREATE CLIENT CONNECTION ============================== //
 
 // CreateClientSocket Initializes client socket. In case of
@@ -58,13 +78,10 @@ func (client *Client) sigtermSignalHandler() {
 func (client *Client) createClientSocket() {
 	conn, err := net.Dial("tcp", client.config.ServerAddress)
 	if err != nil {
-		log.Fatalf(
-			"action: connect | result: fail | client_id: %v | error: %v",
-			client.config.ID,
-			err,
-		)
+		log.Fatalf("action: connect | result: fail | client_id: %v | error: %v", client.config.ID, err)
 	}
 	client.conn = conn
+	log.Debugf("action: connect | result: success | client_id: %v | server_address: %v", client.config.ID, client.config.ServerAddress)
 }
 
 func (client *Client) withNewClientSocketDo(function func() error) error {
@@ -80,53 +97,45 @@ func (client *Client) withNewClientSocketDo(function func() error) error {
 // ============================== PRIVATE - SEND/RECEIVE MESSAGES ============================== //
 
 func (client *Client) sendMessage(message string) error {
+	log.Debugf("action: send_message | result: in_progress | client_id: %v | msg: %v", client.config.ID, message)
+
 	writer := bufio.NewWriter(client.conn)
 	_, err := writer.WriteString(message)
 	if err != nil {
-		log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
-			client.config.ID,
-			err,
-		)
+		log.Errorf("action: send_message | result: fail | client_id: %v | error: %v", client.config.ID, err)
 		return err
 	}
 
 	err = writer.Flush()
 	if err != nil {
-		log.Errorf("action: flush_message | result: fail | client_id: %v | error: %v",
-			client.config.ID,
-			err,
-		)
+		log.Errorf("action: flush_message | result: fail | client_id: %v | error: %v", client.config.ID, err)
 	}
 
-	log.Debugf("action: send_message | result: success | client_id: %v | msg: %v",
-		client.config.ID,
-		message,
-	)
+	log.Debugf("action: send_message | result: success | client_id: %v | msg: %v", client.config.ID, message)
 	return nil
 }
 
 func (client *Client) receiveMessage() (string, error) {
+	log.Debugf("action: receive_message | result: in_progress | client_id: %v", client.config.ID)
+
 	reader := bufio.NewReader(client.conn)
-	msg, err := reader.ReadString(DELIMITER)
+	msg, err := reader.ReadString(END_MSG_DELIMITER[0])
 	if err != nil {
-		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-			client.config.ID,
-			err,
-		)
+		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v", client.config.ID, err)
 		return "", err
 	}
 
-	log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-		client.config.ID,
-		msg,
-	)
+	log.Debugf("action: receive_message | result: success | client_id: %v | msg: %v", client.config.ID, msg)
 	return msg, nil
 }
 
-// ============================= PRIVATE - SEND & ACK BET INFORMATION ============================== //
+// ============================= PRIVATE - SEND BET BATCHS ============================== //
 
-func (client *Client) sendBetInformationAckReceipt(bet *Bet) error {
-	messageToSend := EncodeBetMessage(bet)
+func (client *Client) sendBetMessage(bet *Bet) error {
+	log.Debugf("action: send_bet_message | result: in_progress | client_id: %v", client.config.ID)
+	betBatch := []*Bet{bet}
+
+	messageToSend := EncodeBetBatchMessage(betBatch)
 	err := client.sendMessage(messageToSend)
 	if err != nil {
 		return err
@@ -137,23 +146,39 @@ func (client *Client) sendBetInformationAckReceipt(bet *Bet) error {
 		return err
 	}
 
-	expectedMessage := EncodeAckMessage("1")
+	batchSize := len(betBatch)
+	expectedMessage := EncodeAckMessage(fmt.Sprintf("%d", batchSize))
 	if receivedMessage != expectedMessage {
-		return errors.New("bad ack message received")
+		log.Errorf("action: ack_verification | result: fail | client_id: %v | expected: %v | received: %v",
+			client.config.ID,
+			expectedMessage,
+			receivedMessage,
+		)
+		return errors.New("bad ack message, bet not correctly processed by server")
 	}
 
-	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
-		bet.document,
-		bet.number,
-	)
+	log.Debugf("action: send_bet_message | result: success | client_id: %v | bet_batch_size: %v", client.config.ID, batchSize)
+	return nil
+}
+
+func (client *Client) sendBet(signalReceiver chan os.Signal, bet *Bet) error {
+	log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
+
+	err := client.whenNoSigtermReceivedDo(signalReceiver, func() error {
+		return client.sendBetMessage(bet)
+	})
+	if err != nil {
+		log.Errorf("action: send_bet | result: fail | client_id: %v | error: %v", client.config.ID, err)
+		return err
+	}
+
+	log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
 	return nil
 }
 
 // ============================== PUBLIC ============================== //
 
-func (client *Client) SendBetInformation(bet *Bet) error {
-	log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
-
+func (client *Client) SendBetToNationalLotteryHeadquarters(bet *Bet) error {
 	signalReceiver := make(chan os.Signal, 1)
 	defer func() {
 		close(signalReceiver)
@@ -161,21 +186,5 @@ func (client *Client) SendBetInformation(bet *Bet) error {
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
-	select {
-	case <-signalReceiver:
-		client.sigtermSignalHandler()
-		log.Errorf("action: send_bet | result: fail | client_id: %v", client.config.ID)
-		return nil
-	default:
-		err := client.withNewClientSocketDo(func() error {
-			return client.sendBetInformationAckReceipt(bet)
-		})
-		if err != nil {
-			log.Errorf("action: send_bet | result: fail | client_id: %v", client.config.ID)
-			return err
-		}
-	}
-
-	log.Infof("action: send_bet | result: success | client_id: %v", client.config.ID)
-	return nil
+	return client.withNewClientSocketDo(func() error { return client.sendBet(signalReceiver, bet) })
 }
