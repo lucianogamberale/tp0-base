@@ -153,6 +153,11 @@ func (client *Client) sendBetMessage(bet *Bet) error {
 		)
 		return errors.New("bad ack message, bet not correctly processed by server")
 	}
+
+	log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
+		bet.Document,
+		bet.Number,
+	)
 	return nil
 }
 
