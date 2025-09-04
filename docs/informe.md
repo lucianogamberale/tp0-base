@@ -70,4 +70,4 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 
   3.  Modificar un valor en `config/server/config.ini` en la máquina _host_.
 
-  4.  Verificar dentro de del container correspondiente que se modificó el archivo. Para esto nos adentramos en el container `docker exec -it server sh` y podemos realizar un `cat config.ini`.
+  4.  Verificar dentro de del container correspondiente que se modificó el archivo. Para esto nos adentramos en el container `docker exec -it server sh` y realizar un `cat config.ini`.
