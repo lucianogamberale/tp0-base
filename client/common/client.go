@@ -171,7 +171,7 @@ func (client *Client) sendBet(signalReceiver chan os.Signal, bet *Bet) error {
 			return err
 		}
 
-		log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
+		log.Infof("action: send_bet | result: success | client_id: %v", client.config.ID)
 		return nil
 	})
 }
