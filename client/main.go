@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/op/go-logging"
-	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 
 	"github.com/7574-sistemas-distribuidos/docker-compose-init/client/common"
@@ -34,9 +32,12 @@ func InitConfig() (*viper.Viper, error) {
 	// Add env variables supported
 	v.BindEnv("id")
 	v.BindEnv("server", "address")
-	v.BindEnv("loop", "period")
-	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
+	v.BindEnv("batch", "maxAmount")
+	v.BindEnv("batch", "maxKiB")
+	v.BindEnv("loop", "period")
+
+	v.SetDefault("batch.maxKiB", 8)
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -45,12 +46,6 @@ func InitConfig() (*viper.Viper, error) {
 	v.SetConfigFile("./config.yaml")
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Configuration could not be read from config file. Using env variables instead")
-	}
-
-	// Parse time.Duration variables and return an error if those variables cannot be parsed
-
-	if _, err := time.ParseDuration(v.GetString("loop.period")); err != nil {
-		return nil, errors.Wrapf(err, "Could not parse CLI_LOOP_PERIOD env var as time.Duration.")
 	}
 
 	return v, nil
@@ -81,35 +76,40 @@ func InitLogger(logLevel string) error {
 // PrintConfig Print all the configuration parameters of the program.
 // For debugging purposes only
 func PrintConfig(v *viper.Viper) {
-	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s",
+	log.Infof("action: config | result: success | client_id: %s | server_address: %s | log_level: %s | batch_max_amount: %d | batch_max_kib: %d",
 		v.GetString("id"),
 		v.GetString("server.address"),
-		v.GetInt("loop.amount"),
-		v.GetDuration("loop.period"),
 		v.GetString("log.level"),
+		v.GetInt("batch.maxAmount"),
+		v.GetInt("batch.maxKiB"),
 	)
 }
 
 func main() {
 	v, err := InitConfig()
 	if err != nil {
-		log.Criticalf("%s", err)
+		log.Fatalf("%s", err)
 	}
 
 	if err := InitLogger(v.GetString("log.level")); err != nil {
-		log.Criticalf("%s", err)
+		log.Fatalf("%s", err)
 	}
 
-	// Print program config with debugging purposes
 	PrintConfig(v)
 
 	clientConfig := common.ClientConfig{
-		ServerAddress: v.GetString("server.address"),
-		ID:            v.GetString("id"),
-		LoopAmount:    v.GetInt("loop.amount"),
-		LoopPeriod:    v.GetDuration("loop.period"),
+		ServerAddress:              v.GetString("server.address"),
+		ID:                         v.GetString("id"),
+		MaxAmountOfBetsOnEachBatch: v.GetInt("batch.maxAmount"),
+		MaxKiBPerBatch:             v.GetInt("batch.maxKiB"),
+		AgencyFileName:             fmt.Sprintf("agency-%s.csv", v.GetString("id")),
 	}
 
 	client := common.NewClient(clientConfig)
-	client.StartClientLoop()
+	err = client.SendAllBetsToNationalLotteryHeadquartersThenAskForWinners()
+	if err != nil {
+		log.Fatalf("action: unexpected_error | result: fail | error: %s", err)
+	}
+
+	log.Infof("action: exit | result: success | client_id: %v", v.GetString("id"))
 }
