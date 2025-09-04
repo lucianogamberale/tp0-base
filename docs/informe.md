@@ -296,44 +296,83 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 
 ### Ejercicio 7: Sorteo y Consulta de Ganadores
 
-* **Objetivo:** Implementar la fase final del sorteo. Los clientes, tras enviar todas sus apuestas, deben notificar al servidor y luego consultarle periódicamente por los ganadores de su agencia. El servidor solo podrá responder con los resultados una vez que **todas** las agencias hayan finalizado su envío.
+- **Objetivo:** Implementar la fase final del sorteo. Los clientes, tras enviar todas sus apuestas, deben notificar al servidor y luego consultarle periódicamente por los ganadores de su agencia. El servidor solo podrá responder con los resultados una vez que **todas** las agencias hayan finalizado su envío.
 
-* **Implementación (Cliente - Go):**
-    El cliente ahora opera en un flujo de dos fases claramente diferenciadas: una de envío y otra de consulta.
+- **Implementación (Cliente - Go):**
+  El cliente ahora opera en un flujo de dos fases claramente diferenciadas: una de envío y otra de consulta.
 
-    1.  **Fase 1 - Envío de Apuestas:** Esta fase es idéntica a la del ejercicio 6. El cliente se conecta, envía todas sus apuestas en lotes y finaliza con un mensaje `NMB` (No More Bets) para notificar que ha terminado. Todo esto ocurre sobre una única conexión persistente.
+  1.  **Fase 1 - Envío de Apuestas:** Esta fase es idéntica a la del ejercicio 6. El cliente se conecta, envía todas sus apuestas en lotes y finaliza con un mensaje `NMB` (No More Bets) para notificar que ha terminado. Todo esto ocurre sobre una única conexión persistente.
 
-    2.  **Fase 2 - Consulta de Ganadores (Polling):** Una vez finalizada la fase de envío, el cliente entra en un bucle de sondeo (`polling`) para consultar los resultados.
-        * **Nueva Lógica de Conexión:** Para esta fase, el cliente adopta una estrategia de conexiones cortas: establece una nueva conexión para cada consulta y la cierra inmediatamente después.
-        * **Nuevos Mensajes del Protocolo:** El cliente envía un nuevo tipo de mensaje, `ASK`, para solicitar los ganadores. El servidor puede responder de dos maneras:
-            * **`WIT` (Wait):** Si el sorteo aún no se ha realizado, el servidor responde con este mensaje.
-            * **`WIN` (Winners):** Si el sorteo ya ocurrió, el servidor responde con la lista de DNI ganadores.
-        * **Manejo de Respuestas:** El cliente actúa según la respuesta recibida:
-            * Si recibe `WIT`, interpreta que debe esperar. El cliente hace una pausa (`time.Sleep`) durante un período configurable (`WaitLoopPeriod`) y vuelve a intentarlo.
-            * Si recibe `WIN`, el bucle de sondeo termina. El cliente decodifica el `PAYLOAD` para obtener la lista de ganadores, imprime en el log el mensaje final `action: consulta_ganadores` con la cantidad, y finaliza su ejecución.
+  2.  **Fase 2 - Consulta de Ganadores (Polling):** Una vez finalizada la fase de envío, el cliente entra en un bucle de sondeo (`polling`) para consultar los resultados.
+      - **Nueva Lógica de Conexión:** Para esta fase, el cliente adopta una estrategia de conexiones cortas: establece una nueva conexión para cada consulta y la cierra inmediatamente después.
+      - **Nuevos Mensajes del Protocolo:** El cliente envía un nuevo tipo de mensaje, `ASK`, para solicitar los ganadores. El servidor puede responder de dos maneras:
+        - **`WIT` (Wait):** Si el sorteo aún no se ha realizado, el servidor responde con este mensaje.
+        - **`WIN` (Winners):** Si el sorteo ya ocurrió, el servidor responde con la lista de DNI ganadores.
+      - **Manejo de Respuestas:** El cliente actúa según la respuesta recibida:
+        - Si recibe `WIT`, interpreta que debe esperar. El cliente hace una pausa (`time.Sleep`) durante un período configurable (`WaitLoopPeriod`) y vuelve a intentarlo.
+        - Si recibe `WIN`, el bucle de sondeo termina. El cliente decodifica el `PAYLOAD` para obtener la lista de ganadores, imprime en el log el mensaje final `action: consulta_ganadores` con la cantidad, y finaliza su ejecución.
 
-* **Implementación (Servidor - Python):**
-    El servidor tiene ahora una lógica de estados para gestionar el proceso del sorteo de forma sincronizada.
+- **Implementación (Servidor - Python):**
+  El servidor tiene ahora una lógica de estados para gestionar el proceso del sorteo de forma sincronizada.
 
-    1.  **Máquina de Estados:** El servidor ahora funciona como una máquina de estados simple, controlada por el contador `_number_of_finished_agencies`. Pasa del estado "recibiendo apuestas" al estado "sorteo realizado".
+  1.  **Máquina de Estados:** El servidor ahora funciona como una máquina de estados simple, controlada por el contador `_number_of_finished_agencies`. Pasa del estado "recibiendo apuestas" al estado "sorteo realizado".
 
-    2.  **Disparador del Sorteo:** El sorteo se considera realizado (`__was_draw_held()` devuelve `True`) en el momento exacto en que el servidor recibe el **quinto y último** mensaje `NMB`. En ese instante, emite el log `action: sorteo | result: success`.
+  2.  **Disparador del Sorteo:** El sorteo se considera realizado (`__was_draw_held()` devuelve `True`) en el momento exacto en que el servidor recibe el **quinto y último** mensaje `NMB`. En ese instante, emite el log `action: sorteo | result: success`.
 
-    3.  **Gestión de Consultas:** El servidor ahora puede manejar mensajes `ASK`. Su respuesta depende del estado actual:
-        * **Antes del Sorteo:** Si recibe un `ASK` pero `__was_draw_held()` es `False`, responde con un mensaje `WIT`, indicando al cliente que debe esperar.
-        * **Después del Sorteo:** Si recibe un `ASK` y el sorteo ya se realizó, el servidor utiliza las funciones `utils.load_bets()` y `utils.has_won()` para filtrar y encontrar los ganadores **específicos de la agencia que realizó la consulta**. Luego, serializa los DNIs ganadores en un mensaje `WIN` y lo envía.
+  3.  **Gestión de Consultas:** El servidor ahora puede manejar mensajes `ASK`. Su respuesta depende del estado actual:
 
-    4.  **Condición de Apagado:** El servidor ahora espera no solo a que se realice el sorteo, sino a que todas las agencias hayan consultado y recibido a sus ganadores (`__all_agencies_with_winners()`) antes de finalizar su ejecución.
+      - **Antes del Sorteo:** Si recibe un `ASK` pero `__was_draw_held()` es `False`, responde con un mensaje `WIT`, indicando al cliente que debe esperar.
+      - **Después del Sorteo:** Si recibe un `ASK` y el sorteo ya se realizó, el servidor utiliza las funciones `utils.load_bets()` y `utils.has_won()` para filtrar y encontrar los ganadores **específicos de la agencia que realizó la consulta**. Luego, serializa los DNIs ganadores en un mensaje `WIN` y lo envía.
 
-* **Ejecución:**
-    1.  Posicionarse en la rama: `git checkout ej7`.
-    2.  Levantar los servicios: `make docker-compose-up`.
-    3.  En los logs (`make docker-compose-logs`), se observará el siguiente flujo:
-        * Todas las agencias envían sus lotes y sus mensajes `NMB`.
-        * Tras recibir el último `NMB`, el servidor imprime `action: sorteo | result: success`.
-        * Inmediatamente, los clientes comienzan a enviar mensajes `ASK`. El servidor responde con mensajes `WIN`.
-        * Cada cliente, al recibir su lista, imprime `action: consulta_ganadores | result: success`.
-        * Una vez que todos los clientes han recibido sus resultados, el servidor se apaga.
+  4.  **Condición de Apagado:** El servidor ahora espera no solo a que se realice el sorteo, sino a que todas las agencias hayan consultado y recibido a sus ganadores (`__all_agencies_with_winners()`) antes de finalizar su ejecución.
+
+- **Ejecución:**
+  1.  Posicionarse en la rama: `git checkout ej7`.
+  2.  Levantar los servicios: `make docker-compose-up`.
+  3.  En los logs (`make docker-compose-logs`), se observará el siguiente flujo:
+      - Todas las agencias envían sus lotes y sus mensajes `NMB`.
+      - Tras recibir el último `NMB`, el servidor imprime `action: sorteo | result: success`.
+      - Inmediatamente, los clientes comienzan a enviar mensajes `ASK`. El servidor responde con mensajes `WIN`.
+      - Cada cliente, al recibir su lista, imprime `action: consulta_ganadores | result: success`.
+      - Una vez que todos los clientes han recibido sus resultados, el servidor se apaga.
+
+### Ejercicio 8: Concurrencia en el Servidor
+
+- **Objetivo:** Modificar el servidor para que pueda aceptar y procesar conexiones de múltiples clientes en paralelo. Esto requiere el uso de hilos (_threads_) y la implementación de mecanismos de sincronización para garantizar la consistencia de los datos compartidos y coordinar el evento del sorteo.
+
+- **Implementación (Cliente - Go):**
+  Para adaptarse al nuevo comportamiento del servidor, el cliente fue **simplificado**, eliminando la lógica de sondeo (_polling_), dado que como el server acepta conexiones en paralelo, el cliente podía mantener una conexión persistente sin afectar a los demás.
+
+  1.  **Comunicación única:** El flujo de comunicación del cliente ahora es completamente secuencial y ocurre en una única conexión persistente. Las fases de envío y consulta de ganadores ya no están separadas por conexiones diferentes.
+
+  2.  **Eliminación del Polling:** Se eliminó el bucle `while` que realizaba consultas periódicas. Tras enviar el mensaje `NMB`, el cliente **inmediatamente envía el mensaje `ASK` por la misma conexión**.
+
+  3.  **Espera Bloqueante:** El cliente ahora se bloquea esperando la respuesta `WIN` después de enviar su `ASK`. Como el servidor concurrente puede manejar la espera internamente, ya no es necesario el mensaje `WIT` (Wait). El cliente asume que la respuesta a su `ASK` será la definitiva.
+
+  Este cambio hace al cliente más simple y eficiente, delegando la complejidad de la sincronización del sorteo completamente al servidor.
+
+- **Implementación (Servidor - Python):**
+  El servidor fue rediseñado para adoptar un modelo concurrente **"thread-per-client"**, utilizando primitivas de sincronización del módulo `threading` para gestionar el sorteo. Es importante destacar que a pesar de las [limitaciones propias del lenguaje](https://wiki.python.org/moin/GlobalInterpreterLock), se cumple el paralelismo solicitado por no ser
+
+  1.  **Arquitectura "Thread-Per-Client":** El hilo principal del servidor ahora tiene una única responsabilidad: aceptar nuevas conexiones en un bucle. Por cada conexión aceptada, instancia y lanza un nuevo hilo de ejecución (`threading.Thread`) que se encargará de gestionar toda la comunicación con ese cliente específico. Esto permite que las cinco agencias envíen sus apuestas y consulten resultados de forma paralela.
+
+  2.  **Sincronización con `threading.Barrier`:** El mecanismo central para coordinar el sorteo es una **barrera**.
+
+      - Se inicializa una barrera (`threading.Barrier`) con el número total de agencias (5).
+      - Cada hilo de cliente, después de procesar todos los lotes y recibir el mensaje `ASK`, llega a la línea `self._draw_barrier.wait()`.
+      - En este punto, el hilo se bloquea. La barrera lleva un conteo interno de cuántos hilos han llegado.
+      - Cuando el **quinto y último hilo** llega y llama a `.wait()`, la barrera se "rompe", y todos los hilos que estaban esperando son liberados **simultáneamente** para continuar su ejecución.
+      - El hilo que rompe la barrera es el encargado de imprimir el log `action: sorteo | result: success`, asegurando que se imprima una sola vez en el momento justo.
+
+  3.  **Gestión de Hilos:** El hilo principal, después de lanzar todos los hilos de los clientes, espera a que todos terminen su ejecución (`thread.join()`) antes de finalizar el programa, garantizando un apagado limpio.
+
+- **Ejecución:**
+  1.  Posicionarse en la rama: `git checkout ej8`.
+  2.  Levantar los servicios: `make docker-compose-up`.
+  3.  Al revisar los logs (`make docker-compose-logs`), se podrá observar el comportamiento concurrente:
+      - Los logs de `apuesta_recibida` de diferentes clientes aparecerán **intercalados**, demostrando el procesamiento en paralelo.
+      - Aparecerá el único log de `action: sorteo | result: success`.
+      - Inmediatamente después, aparecerán los cinco logs de `action: consulta_ganadores` de los clientes casi al mismo tiempo, evidenciando que todos fueron liberados por la barrera de forma simultánea.
 
 ---
 
@@ -341,40 +380,76 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 
 ### Protocolo de Comunicación
 
-El protocolo se expande para manejar la fase de consulta de resultados del sorteo.
+El protocolo se simplifica en su fase final, eliminando la necesidad de un mensaje de espera.
 
-* **Formato General del Mensaje:**
-    `TIPO[PAYLOAD]`
+- **Formato General del Mensaje:**
+  `TIPO[PAYLOAD]`
 
-* **Tipos de Mensajes (Ejercicio 5):**
-    * **`BET`**: Para una única apuesta. `PAYLOAD`: `{"campo":"valor",...}`.
-    * **`ACK`**: Confirmación simple. `PAYLOAD`: `1`.
+- **Formato General del Mensaje:**
+  `TIPO[PAYLOAD]`
 
-* **Evolución para el Ejercicio 6:**
-    * **`NMB` (No More Bets):** El cliente notifica el fin del envío. `PAYLOAD`: `{"agency":"1"}`.
-    * **`BET` (Modificado):** `PAYLOAD` ahora contiene lotes. `BET[{...};{...}]`.
-    * **`ACK` (Modificado):** `PAYLOAD` contiene la cantidad de apuestas en un lote (`ACK[50]`) o confirma el `NMB` (`ACK[NMB]`).
+- **Tipos de Mensajes (Ejercicio 5):**
 
-* **Evolución para el Ejercicio 7:**
-    * **Nuevos Tipos de Mensaje:**
-        * **`ASK` (Ask for Winners):**
-            * **Propósito:** Enviado por el cliente para solicitar la lista de ganadores de su agencia.
-            * **Payload:** Identifica a la agencia que consulta. `{"agency":"1"}`.
-        * **`WIT` (Wait):**
-            * **Propósito:** Enviado por el servidor para indicar que el sorteo aún no se ha realizado y el cliente debe esperar.
-            * **Payload:** Vacío.
-        * **`WIN` (Winners):**
-            * **Propósito:** Enviado por el servidor con la lista final de ganadores para una agencia.
-            * **Payload:** Una lista de DNI ganadores, separados por comas. `"12345678","87654321"`.
+  - **`BET`**: Para una única apuesta. `PAYLOAD`: `{"campo":"valor",...}`.
+  - **`ACK`**: Confirmación simple. `PAYLOAD`: `1`.
 
-* **Ejemplo de Interacción Completa (Ej. 6 + 7):**
-    1.  **Cliente -> Servidor:** `BET[...lote...]`
-    2.  **Servidor -> Cliente:** `ACK[50]`
-    3.  **Cliente -> Servidor:** `NMB[{"agency":"1"}]`
-    4.  **Servidor -> Cliente:** `ACK[NMB]`
-    5.  *(El cliente cierra la conexión y entra en fase de polling)*
-    6.  **Cliente -> Servidor (Nueva Conexión):** `ASK[{"agency":"1"}]`
-    7.  **Servidor -> Cliente:** `WIT[]`
-    8.  *(Cliente espera N segundos y crea otra conexión)*
-    9.  **Cliente -> Servidor (Nueva Conexión):** `ASK[{"agency":"1"}]`
-    10. **Servidor -> Cliente:** `WIN["11122233","44455566"]`
+- **Evolución para el Ejercicio 6:**
+
+  - **`NMB` (No More Bets):** El cliente notifica el fin del envío. `PAYLOAD`: `{"agency":"1"}`.
+  - **`BET` (Modificado):** `PAYLOAD` ahora contiene lotes. `BET[{...};{...}]`.
+  - **`ACK` (Modificado):** `PAYLOAD` contiene la cantidad de apuestas en un lote (`ACK[50]`) o confirma el `NMB` (`ACK[NMB]`).
+
+- **Evolución para el Ejercicio 7:**
+
+  - **`ASK` (Ask for Winners):**
+    - **Propósito:** Enviado por el cliente para solicitar la lista de ganadores de su agencia.
+    - **Payload:** Identifica a la agencia que consulta. `{"agency":"1"}`.
+  - **`WIT` (Wait):**
+    - **Propósito:** Enviado por el servidor para indicar que el sorteo aún no se ha realizado y el cliente debe esperar.
+    - **Payload:** Vacío.
+  - **`WIN` (Winners):**
+    - **Propósito:** Enviado por el servidor con la lista final de ganadores para una agencia.
+    - **Payload:** Una lista de DNI ganadores, separados por comas. `"12345678","87654321"`.
+
+- **Evolución para el Ejercicio 8:**
+
+  - **Mensaje Eliminado - `WIT` (Wait):**
+    - Este mensaje ya no es necesario. El servidor concurrente gestionará la espera de los clientes internamente, bloqueando la conexión hasta que el sorteo se realice. La ausencia de este mensaje simplifica la lógica del cliente.
+
+- **Ejemplo de Interacción Final:**
+  1.  **Cliente -> Servidor (Lote 1):** `BET[{"doc":"111",...};{"doc":"222",...}]`
+  2.  **Servidor -> Cliente:** `ACK[2]`
+  3.  _(... más lotes ...)_
+  4.  **Cliente -> Servidor (Fin Lotes):** `NMB[{"agency":"1"}]`
+  5.  **Servidor -> Cliente:** `ACK[NMB]`
+  6.  **Cliente -> Servidor (Consulta):** `ASK[{"agency":"1"}]`
+  7.  _(El cliente se bloquea en la lectura, esperando la respuesta)_
+  8.  _(El servidor espera a que todas las agencias lleguen a la barrera, realiza el sorteo y finalmente responde)_
+  9.  **Servidor -> Cliente:** `WIN["11122233","44455566"]`
+
+## Mecanismos de Sincronización
+
+Para garantizar el correcto funcionamiento del servidor en un entorno concurrente, se utilizaron las siguientes primitivas del módulo `threading` de Python.
+
+### Elección de Threads vs. Procesos: El Rol del GIL
+
+Una decisión fundamental en la concurrencia con Python es elegir entre `threading` y `multiprocessing`. Aunque a primera vista el **Global Interpreter Lock (GIL)** parece invalidar el uso de hilos para el paralelismo real, la naturaleza de nuestra aplicación hace que `threading` sea la opción ideal.
+
+- **¿Qué es el GIL?** El GIL es un mutex que protege los objetos de Python, asegurando que solo **un hilo ejecute bytecode de Python a la vez** en un único proceso. Esto significa que para tareas **CPU-bound** (cálculos intensivos), los hilos no pueden aprovechar múltiples núcleos de CPU y `multiprocessing` sería la elección correcta.
+
+- **Nuestra Aplicación es I/O-bound:** Nuestro servidor no realiza cálculos complejos. Su principal actividad es esperar: esperar por nuevas conexiones (`socket.accept()`), esperar a que los clientes envíen datos (`socket.recv()`) y esperar a que los datos se envíen por la red (`socket.sendall()`). Este tipo de carga de trabajo se denomina **I/O-bound** (limitada por la Entrada/Salida).
+
+- **¿Por qué Threads?** La clave es que el GIL **se libera** cuando un hilo inicia una operación de I/O bloqueante. Mientras un hilo está pasivamente esperando datos de la red, el GIL está disponible, permitiendo que otro hilo se ejecute. Esto crea un modelo de **concurrencia muy eficiente**: mientras el Hilo A espera por el Lote 2 del Cliente 1, el Hilo B puede estar procesando el Lote 1 del Cliente 2. Aunque no hay paralelismo real de ejecución de Python, el tiempo de espera de I/O se solapa, dando como resultado un alto rendimiento.
+
+En resumen, para nuestra aplicación que maneja muchas operaciones IO, los hilos son la herramienta correcta porque permiten manejar de manera mas "liviana" conexiones simultáneas eficientemente, aprovechando los tiempos muertos de espera de red.
+
+### Primitivas Utilizadas
+
+- **`threading.Thread`:**
+  Se adopta el modelo **"thread-per-client"**, donde cada cliente conectado es atendido por un hilo de ejecución independiente. Esto permite que el procesamiento de las apuestas de múltiples agencias ocurra en paralelo, mejorando significativamente el rendimiento y la capacidad de respuesta del sistema.
+
+- **`threading.Barrier`:**
+  Es la herramienta de sincronización clave para el sorteo. En este caso, se inicializa con el número de agencias. Cada hilo de cliente se bloquea en la barrera (`barrier.wait()`) al momento de consultar por los ganadores. Ningún hilo puede avanzar más allá de este punto hasta que **todos** los hilos hayan llegado. Esto garantiza por diseño que el sorteo no se procese hasta que la última agencia haya finalizado su envío y esté lista para recibir los resultados, resolviendo el problema de sincronización de una manera elegante y eficiente.
+
+- **`threading.Event`:**
+  Se utiliza como un _flag_ booleano seguro para hilos (_thread-safe_). En esta implementación, se usa para gestionar el estado de ejecución del servidor (`_server_running`). El hilo principal verifica este evento para continuar aceptando conexiones, y el manejador de `SIGTERM` lo utiliza para señalar a todos los hilos que deben finalizar su ejecución de forma ordenada.
