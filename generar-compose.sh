@@ -118,7 +118,7 @@ fi
 compose_filename_param=$1
 clients_amount_param=$2
 
-if ! [[ "$clients_amount_param" =~ ^[0-9]+$ ]] || [ "$clients_amount_param" -lt 1 ]; then
+if ! [[ "$clients_amount_param" =~ ^[0-9]+$ ]] || [ "$clients_amount_param" -lt 0 ]; then
   echo "Error: La cantidad de clientes debe ser un entero positivo."
   exit 1
 fi
