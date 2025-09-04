@@ -29,10 +29,13 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 - **Ejecución:**
 
   1.  Posicionarse en la rama: `git checkout ej1`
+
   2.  Ejecutar el script para generar un archivo, por ejemplo, `docker-compose-dev.yaml` con 5 clientes:
+
       ```bash
       ./generar-compose.sh docker-compose-dev.yaml 5
       ```
+
   3.  Levantar los servicios utilizando el archivo generado:
 
       ```bash
