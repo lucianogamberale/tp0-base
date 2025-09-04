@@ -40,6 +40,7 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "period")
 
 	v.SetDefault("batch.maxKiB", 8)
+	v.SetDefault("loop.period", "2s")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration

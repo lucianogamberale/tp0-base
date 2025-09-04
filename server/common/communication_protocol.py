@@ -24,14 +24,23 @@ WINNERS_SEPARATOR = ","
 # ============================= DECODE ============================== #
 
 
-def __assert_message_format(message: str, expected_type: str) -> None:
+def decode_message_type(message: str) -> str:
+    if len(message) < MESSAGE_TYPE_LENGTH:
+        raise ValueError("Message too short to contain a valid message type")
+    return message[:MESSAGE_TYPE_LENGTH]
+
+
+def __assert_message_format(message: str, expected_message_type: str) -> None:
+    received_message_type = decode_message_type(message)
+    if received_message_type != expected_message_type:
+        raise ValueError(
+            f"Unexpected message type. Expected: {expected_message_type}, Received: {received_message_type}",
+        )
+
     if not (
-        message.startswith(expected_type + START_MSG_DELIMITER)
+        message.startswith(expected_message_type + START_MSG_DELIMITER)
         and message.endswith(END_MSG_DELIMITER)
     ):
-        logging.error(
-            f"action: assert_message_format | result: fail | error: invalid format"
-        )
         raise ValueError("Unexpected message format")
 
 
@@ -86,9 +95,6 @@ def decode_bet_batch_message(message: str) -> list[utils.Bet]:
         bet = __decode_bet(bet_entry)
         bet_batch.append(bet)
 
-    logging.debug(
-        f"action: decode_bet_batch | result: success | count: {len(bet_batch)}"
-    )
     return bet_batch
 
 
@@ -98,9 +104,7 @@ def decode_no_more_bets_message(message: str) -> int:
     payload = __get_message_payload(message)
 
     _, agency = __decode_field(payload)
-    logging.debug(
-        f"action: decode_no_more_bets | result: success | agency: {agency}",
-    )
+
     return int(agency)
 
 
@@ -110,9 +114,7 @@ def decode_ask_for_winners_message(message: str) -> int:
     payload = __get_message_payload(message)
 
     _, agency = __decode_field(payload)
-    logging.debug(
-        f"action: decode_ask_for_winners | result: success | agency: {agency}",
-    )
+
     return int(agency)
 
 

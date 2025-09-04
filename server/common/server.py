@@ -11,25 +11,36 @@ class Server:
     # ============================== INITIALIZE ============================== #
 
     def __init__(self, port, listen_backlog, number_of_agencies: int) -> None:
-        # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(("", port))
         self._server_socket.listen(listen_backlog)
 
         self._number_of_agencies = number_of_agencies
-        self._agencies_information = {}
+        self._number_of_finished_agencies = 0
+        self._number_of_agencies_with_winners = 0
 
-        self._server_running = False
+        self.__set_server_as_not_running()
+
         signal.signal(signal.SIGTERM, self.__sigterm_signal_handler)
+
+    # ============================== PRIVATE - ACCESSING ============================== #
+
+    def __is_running(self) -> bool:
+        return self._server_running
+
+    def __set_server_as_not_running(self) -> None:
+        self._server_running = False
+
+    def __set_server_as_running(self) -> None:
+        self._server_running = True
 
     # ============================== PRIVATE - SIGNAL HANDLER ============================== #
 
     def __sigterm_signal_handler(self, signum, frame):
         logging.info("action: sigterm_signal_handler | result: in_progress")
 
-        self._server_running = False
+        self.__set_server_as_not_running()
 
-        self._server_socket.shutdown(socket.SHUT_RDWR)
         self._server_socket.close()
         logging.debug("action: sigterm_server_socket_close | result: success")
 
@@ -85,7 +96,7 @@ class Server:
                 logging.error(
                     f"action: receive_message | result: fail | error: unexpected disconnection",
                 )
-                OSError("Unexpected disconnection of the client")
+                raise OSError("Unexpected disconnection of the client")
 
             logging.debug(
                 f"action: receive_chunk | result: success | chunk size: {len(chunk)}"
@@ -101,46 +112,23 @@ class Server:
 
     # ============================== PRIVATE - AGENCIES INFORMATION ============================== #
 
-    def __modify_agency_status(self, agency: int, status: str) -> None:
-        key = f"agency_{agency}"
-        if key in self._agencies_information:
-            self._agencies_information[key]["status"] = status
-        else:
-            self._agencies_information[key] = {"status": status}
-
-    def __set_agency_as_pending_bets(self, agency: int) -> None:
-        self.__modify_agency_status(agency, "pending_bets")
-
-    def __set_agency_as_all_bets_received(self, agency: int) -> None:
-        self.__modify_agency_status(agency, "all_bets_received")
-
-    def __set_agency_as_winners_sent(self, agency: int) -> None:
-        self.__modify_agency_status(agency, "winners_sent")
-
     def __was_draw_held(self) -> bool:
-        return len(self._agencies_information) == self._number_of_agencies and all(
-            status["status"] == "all_bets_received"
-            or status["status"] == "winners_sent"
-            for status in self._agencies_information.values()
-        )
+        return self._number_of_finished_agencies == self._number_of_agencies
 
-    def __all_winners_sent(self) -> bool:
-        return len(self._agencies_information) == self._number_of_agencies and all(
-            status["status"] == "winners_sent"
-            for status in self._agencies_information.values()
-        )
+    def __all_agencies_with_winners(self) -> bool:
+        return self._number_of_agencies_with_winners == self._number_of_agencies
 
     # ============================== PRIVATE - SEND ACK ============================== #
 
     def __send_ack_message(
         self, client_connection: socket.socket, message: str, logging_action: str
     ) -> None:
-        logging.info(f"action: {logging_action} | result: in_progress")
+        logging.debug(f"action: {logging_action} | result: in_progress")
 
         message = communication_protocol.encode_ack_message(message)
         self.__send_message(client_connection, message)
 
-        logging.info(f"action: {logging_action} | result: success")
+        logging.debug(f"action: {logging_action} | result: success")
 
     # ============================== PRIVATE - HANDLE BET BATCH ============================== #
 
@@ -156,23 +144,22 @@ class Server:
     ) -> None:
         bet_batch = []
         try:
-            logging.info(f"action: receive_bet_batch | result: in_progress")
-            bet_batch = communication_protocol.decode_bet_batch_message(message)
-            logging.info(f"action: receive_bet_batch | result: success")
+            logging.info(f"action: handle_bet_batch_message | result: in_progress")
 
+            bet_batch = communication_protocol.decode_bet_batch_message(message)
             if len(bet_batch) == 0:
                 raise ValueError("Empty bet batch received")
-            self.__set_agency_as_pending_bets(bet_batch[0].agency)
-
             utils.store_bets(bet_batch)
             self.__send_bet_batch_ack(client_connection, len(bet_batch))
             logging.info(
                 f"action: apuesta_recibida | result: success | cantidad: {len(bet_batch)}"
             )
+
+            logging.info(f"action: handle_bet_batch_message | result: success")
         except Exception as e:
             self.__send_bet_batch_ack(client_connection, 0)
-            logging.info(
-                f"action: apuesta_recibida | result: fail | cantidad: {len(bet_batch)}"
+            logging.error(
+                f"action: handle_bet_batch_message | result: fail | error: {e}"
             )
             raise e
 
@@ -181,24 +168,28 @@ class Server:
     def __handle_no_more_bets_message(
         self, client_connection: socket.socket, message: str
     ) -> None:
-        logging.info(f"action: receive_no_more_bets | result: in_progress")
-        agency = communication_protocol.decode_no_more_bets_message(message)
-        logging.info(f"action: receive_no_more_bets | result: success")
+        logging.info(f"action: handle_no_more_bets_message | result: in_progress")
 
-        self.__set_agency_as_all_bets_received(agency)
-
+        communication_protocol.decode_no_more_bets_message(message)
         self.__send_ack_message(
             client_connection,
             communication_protocol.NO_MORE_BETS_MSG_TYPE,
             "ack_no_more_bets",
         )
 
+        logging.info(f"action: handle_no_more_bets_message | result: success")
+
+        self._number_of_finished_agencies += 1
         if self.__was_draw_held():
             logging.info("action: sorteo | result: success")
 
     # ============================== PRIVATE - HANDLE ASK FOR WINNERS ============================== #
 
     def __send_winners(self, client_connection: socket.socket, agency: int) -> None:
+        logging.debug(
+            f"action: send_winners | result: in_progress | agency: {agency}",
+        )
+
         winners = [
             bet
             for bet in utils.load_bets()
@@ -206,27 +197,33 @@ class Server:
         ]
         message = communication_protocol.encode_winners_message(winners)
         self.__send_message(client_connection, message)
-        logging.info(
+        self._number_of_agencies_with_winners += 1
+
+        logging.debug(
             f"action: send_winners | result: success | agency: {agency} | winners: {len(winners)}",
         )
 
     def __send_wait_message(self, client_connection: socket.socket) -> None:
+        logging.info(f"action: send_wait | result: in_progress")
+
         message = communication_protocol.encode_wait_message()
         self.__send_message(client_connection, message)
+
         logging.info(f"action: send_wait | result: success")
 
     def __handle_ask_for_winners(
         self, client_connection: socket.socket, message: str
     ) -> None:
-        logging.info(f"action: receive_ask_for_winners | result: in_progress")
+        logging.info(f"action: handle_ask_for_winners | result: in_progress")
+
         agency = communication_protocol.decode_ask_for_winners_message(message)
-        logging.info(f"action: receive_ask_for_winners | result: success")
 
         if self.__was_draw_held():
             self.__send_winners(client_connection, agency)
-            self.__set_agency_as_winners_sent(agency)
         else:
             self.__send_wait_message(client_connection)
+
+        logging.info(f"action: handle_ask_for_winners | result: success")
 
     # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
@@ -237,25 +234,21 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
-        keep_client_connection = True
 
-        while self._server_running and keep_client_connection:
+        while self.__is_running():
             message = self.__receive_message(client_connection)
 
             if message.startswith(communication_protocol.BET_MSG_TYPE):
                 self.__handle_bet_batch_message(client_connection, message)
             elif message.startswith(communication_protocol.NO_MORE_BETS_MSG_TYPE):
                 self.__handle_no_more_bets_message(client_connection, message)
-                keep_client_connection = False
+                break
             elif message.startswith(communication_protocol.ASK_FOR_WINNERS_MSG_TYPE):
                 self.__handle_ask_for_winners(client_connection, message)
-                keep_client_connection = False
+                break
             else:
-                logging.error(
-                    f'action: handle_client_connection | result: fail | error: invalid message type "{message[:communication_protocol.MESSAGE_TYPE_LENGTH]}"',
-                )
                 raise ValueError(
-                    f'Invalid message type received from client "{message}"'
+                    f'Invalid message type received from client "{communication_protocol.decode_message_type(message)}"'
                 )
 
     # ============================== PUBLIC ============================== #
@@ -270,9 +263,9 @@ class Server:
         """
         logging.info("action: server_startup | result: success")
 
-        self._server_running = True
+        self.__set_server_as_running()
         try:
-            while self._server_running:
+            while self.__is_running() and not self.__all_agencies_with_winners():
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
