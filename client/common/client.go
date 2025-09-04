@@ -132,10 +132,7 @@ func (client *Client) receiveMessage() (string, error) {
 // ============================= PRIVATE - SEND BET BATCHS ============================== //
 
 func (client *Client) sendBetMessage(bet *Bet) error {
-	log.Debugf("action: send_bet_message | result: in_progress | client_id: %v", client.config.ID)
-	betBatch := []*Bet{bet}
-
-	messageToSend := EncodeBetBatchMessage(betBatch)
+	messageToSend := EncodeBetMessage(bet)
 	err := client.sendMessage(messageToSend)
 	if err != nil {
 		return err
@@ -146,7 +143,7 @@ func (client *Client) sendBetMessage(bet *Bet) error {
 		return err
 	}
 
-	batchSize := len(betBatch)
+	batchSize := 1
 	expectedMessage := EncodeAckMessage(fmt.Sprintf("%d", batchSize))
 	if receivedMessage != expectedMessage {
 		log.Errorf("action: ack_verification | result: fail | client_id: %v | expected: %v | received: %v",
@@ -156,29 +153,29 @@ func (client *Client) sendBetMessage(bet *Bet) error {
 		)
 		return errors.New("bad ack message, bet not correctly processed by server")
 	}
-
-	log.Debugf("action: send_bet_message | result: success | client_id: %v | bet_batch_size: %v", client.config.ID, batchSize)
 	return nil
 }
 
 func (client *Client) sendBet(signalReceiver chan os.Signal, bet *Bet) error {
-	log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
+	return client.whenNoSigtermReceivedDo(signalReceiver, func() error {
+		log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
 
-	err := client.whenNoSigtermReceivedDo(signalReceiver, func() error {
-		return client.sendBetMessage(bet)
+		err := client.sendBetMessage(bet)
+		if err != nil {
+			log.Errorf("action: send_bet | result: fail | client_id: %v | error: %v", client.config.ID, err)
+			return err
+		}
+
+		log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
+		return nil
 	})
-	if err != nil {
-		log.Errorf("action: send_bet | result: fail | client_id: %v | error: %v", client.config.ID, err)
-		return err
-	}
-
-	log.Infof("action: send_bet | result: in_progress | client_id: %v", client.config.ID)
-	return nil
 }
 
 // ============================== PUBLIC ============================== //
 
 func (client *Client) SendBetToNationalLotteryHeadquarters(bet *Bet) error {
+	client.clientRunning = true
+
 	signalReceiver := make(chan os.Signal, 1)
 	defer func() {
 		close(signalReceiver)
@@ -186,5 +183,7 @@ func (client *Client) SendBetToNationalLotteryHeadquarters(bet *Bet) error {
 	}()
 	signal.Notify(signalReceiver, syscall.SIGTERM)
 
-	return client.withNewClientSocketDo(func() error { return client.sendBet(signalReceiver, bet) })
+	return client.withNewClientSocketDo(func() error {
+		return client.sendBet(signalReceiver, bet)
+	})
 }

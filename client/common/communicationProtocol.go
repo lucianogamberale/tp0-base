@@ -43,14 +43,9 @@ func EncodeBet(bet *Bet) string {
 	return encodedBet
 }
 
-func EncodeBetBatchMessage(betBatch []*Bet) string {
+func EncodeBetMessage(bet *Bet) string {
 	encodedPayload := ""
-	for i, bet := range betBatch {
-		encodedPayload += EncodeBet(bet)
-		if i < len(betBatch)-1 {
-			encodedPayload += BET_BATCH_SEPARATOR
-		}
-	}
+	encodedPayload += EncodeBet(bet)
 	return encodeMessage(BET_MSG_TYPE, encodedPayload)
 }
 
