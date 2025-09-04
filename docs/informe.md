@@ -119,7 +119,7 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
 
   2.  **Registro de Señal:** Usando `signal.Notify(channel, syscall.SIGTERM)`, se le indica al runtime de Go que debe enviar una notificación al canal cada vez que el proceso reciba la señal `SIGTERM`.
 
-  3.  **Manejo Asíncrono con `select`:** El bucle principal del cliente, que se encarga de enviar mensajes periódicamente, se modificó para usar una sentencia `select`. En cada iteración, el `select` permite al programa esperar por dos eventos de forma no bloqueante:
+  3.  **Manejo con `select`:** El bucle principal del cliente, que se encarga de enviar mensajes periódicamente, se modificó para usar una sentencia `select`. En cada iteración, el `select` permite al programa esperar por dos eventos de forma no bloqueante:
 
       - **Caso 1 (Señal Recibida):** Si llega un mensaje al canal de señales, significa que se recibió `SIGTERM`. En este caso, se ejecuta la función de limpieza `sigtermSignalHandler()` y se termina el bucle principal, finalizando el programa de forma controlada.
       - **Caso 2 (`default`):** Si no hay ninguna señal pendiente, se ejecuta el bloque `default`, que contiene la lógica normal de crear un socket, enviar un mensaje y esperar el período de tiempo configurado.
