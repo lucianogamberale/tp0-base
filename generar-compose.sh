@@ -66,12 +66,13 @@ function add-client-service() {
 
 function add-services() {
   local compose_filename=$1
+  local clients_amount=$2
 
   add-line $compose_filename "services:"
 
-  add-server-service $compose_filename
+  add-server-service $compose_filename $clients_amount
   
-  for (( i=1; i<=clients_amount; i++ )); do
+  for (( i=1; i<=$clients_amount; i++ )); do
     add-empty-line $compose_filename
     add-client-service $compose_filename $i
   done
