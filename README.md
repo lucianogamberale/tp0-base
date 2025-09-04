@@ -20,12 +20,12 @@ El informe técnico detalla las decisiones de diseño y la implementación de ca
   <img src="https://huergo.edu.ar/images/convenios/fiuba.jpg" width="60%" style="background-color:white"/>
 <font size="+1">
 <br>
+<br>
 Gamberale Luciano Martín - Padrón 105892
 <br>
 2c 2025
 </font>
 </p>
-<br>
 
 ---
 ---
