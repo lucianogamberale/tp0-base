@@ -294,38 +294,87 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
   3.  Levantar los servicios: `make docker-compose-up`.
   4.  En los logs (`make docker-compose-logs`) se observará cómo los clientes leen y envían lotes de apuestas, y el servidor confirma cada lote con el log `action: apuesta_recibida`. Finalmente, los clientes enviarán la notificación de finalización y el servidor se apagará.
 
+### Ejercicio 7: Sorteo y Consulta de Ganadores
+
+* **Objetivo:** Implementar la fase final del sorteo. Los clientes, tras enviar todas sus apuestas, deben notificar al servidor y luego consultarle periódicamente por los ganadores de su agencia. El servidor solo podrá responder con los resultados una vez que **todas** las agencias hayan finalizado su envío.
+
+* **Implementación (Cliente - Go):**
+    El cliente ahora opera en un flujo de dos fases claramente diferenciadas: una de envío y otra de consulta.
+
+    1.  **Fase 1 - Envío de Apuestas:** Esta fase es idéntica a la del ejercicio 6. El cliente se conecta, envía todas sus apuestas en lotes y finaliza con un mensaje `NMB` (No More Bets) para notificar que ha terminado. Todo esto ocurre sobre una única conexión persistente.
+
+    2.  **Fase 2 - Consulta de Ganadores (Polling):** Una vez finalizada la fase de envío, el cliente entra en un bucle de sondeo (`polling`) para consultar los resultados.
+        * **Nueva Lógica de Conexión:** Para esta fase, el cliente adopta una estrategia de conexiones cortas: establece una nueva conexión para cada consulta y la cierra inmediatamente después.
+        * **Nuevos Mensajes del Protocolo:** El cliente envía un nuevo tipo de mensaje, `ASK`, para solicitar los ganadores. El servidor puede responder de dos maneras:
+            * **`WIT` (Wait):** Si el sorteo aún no se ha realizado, el servidor responde con este mensaje.
+            * **`WIN` (Winners):** Si el sorteo ya ocurrió, el servidor responde con la lista de DNI ganadores.
+        * **Manejo de Respuestas:** El cliente actúa según la respuesta recibida:
+            * Si recibe `WIT`, interpreta que debe esperar. El cliente hace una pausa (`time.Sleep`) durante un período configurable (`WaitLoopPeriod`) y vuelve a intentarlo.
+            * Si recibe `WIN`, el bucle de sondeo termina. El cliente decodifica el `PAYLOAD` para obtener la lista de ganadores, imprime en el log el mensaje final `action: consulta_ganadores` con la cantidad, y finaliza su ejecución.
+
+* **Implementación (Servidor - Python):**
+    El servidor tiene ahora una lógica de estados para gestionar el proceso del sorteo de forma sincronizada.
+
+    1.  **Máquina de Estados:** El servidor ahora funciona como una máquina de estados simple, controlada por el contador `_number_of_finished_agencies`. Pasa del estado "recibiendo apuestas" al estado "sorteo realizado".
+
+    2.  **Disparador del Sorteo:** El sorteo se considera realizado (`__was_draw_held()` devuelve `True`) en el momento exacto en que el servidor recibe el **quinto y último** mensaje `NMB`. En ese instante, emite el log `action: sorteo | result: success`.
+
+    3.  **Gestión de Consultas:** El servidor ahora puede manejar mensajes `ASK`. Su respuesta depende del estado actual:
+        * **Antes del Sorteo:** Si recibe un `ASK` pero `__was_draw_held()` es `False`, responde con un mensaje `WIT`, indicando al cliente que debe esperar.
+        * **Después del Sorteo:** Si recibe un `ASK` y el sorteo ya se realizó, el servidor utiliza las funciones `utils.load_bets()` y `utils.has_won()` para filtrar y encontrar los ganadores **específicos de la agencia que realizó la consulta**. Luego, serializa los DNIs ganadores en un mensaje `WIN` y lo envía.
+
+    4.  **Condición de Apagado:** El servidor ahora espera no solo a que se realice el sorteo, sino a que todas las agencias hayan consultado y recibido a sus ganadores (`__all_agencies_with_winners()`) antes de finalizar su ejecución.
+
+* **Ejecución:**
+    1.  Posicionarse en la rama: `git checkout ej7`.
+    2.  Levantar los servicios: `make docker-compose-up`.
+    3.  En los logs (`make docker-compose-logs`), se observará el siguiente flujo:
+        * Todas las agencias envían sus lotes y sus mensajes `NMB`.
+        * Tras recibir el último `NMB`, el servidor imprime `action: sorteo | result: success`.
+        * Inmediatamente, los clientes comienzan a enviar mensajes `ASK`. El servidor responde con mensajes `WIN`.
+        * Cada cliente, al recibir su lista, imprime `action: consulta_ganadores | result: success`.
+        * Una vez que todos los clientes han recibido sus resultados, el servidor se apaga.
+
 ---
 
 ## Aspectos de Diseño
 
 ### Protocolo de Comunicación
 
-El protocolo de comunicación evoluciona para soportar el envío de lotes y la señalización de fin de transmisión.
+El protocolo se expande para manejar la fase de consulta de resultados del sorteo.
 
-- **Formato General del Mensaje:**
-  `TIPO[PAYLOAD]`
+* **Formato General del Mensaje:**
+    `TIPO[PAYLOAD]`
 
-- **Tipos de Mensajes (Ejercicio 5):**
+* **Tipos de Mensajes (Ejercicio 5):**
+    * **`BET`**: Para una única apuesta. `PAYLOAD`: `{"campo":"valor",...}`.
+    * **`ACK`**: Confirmación simple. `PAYLOAD`: `1`.
 
-  - **`BET`**: Para una única apuesta. `PAYLOAD`: `{"campo":"valor",...}`.
-  - **`ACK`**: Confirmación simple. `PAYLOAD`: `1`. Debido a que solo se recibía una apuesta.
+* **Evolución para el Ejercicio 6:**
+    * **`NMB` (No More Bets):** El cliente notifica el fin del envío. `PAYLOAD`: `{"agency":"1"}`.
+    * **`BET` (Modificado):** `PAYLOAD` ahora contiene lotes. `BET[{...};{...}]`.
+    * **`ACK` (Modificado):** `PAYLOAD` contiene la cantidad de apuestas en un lote (`ACK[50]`) o confirma el `NMB` (`ACK[NMB]`).
 
-- **Evolución para el Ejercicio 6:**
+* **Evolución para el Ejercicio 7:**
+    * **Nuevos Tipos de Mensaje:**
+        * **`ASK` (Ask for Winners):**
+            * **Propósito:** Enviado por el cliente para solicitar la lista de ganadores de su agencia.
+            * **Payload:** Identifica a la agencia que consulta. `{"agency":"1"}`.
+        * **`WIT` (Wait):**
+            * **Propósito:** Enviado por el servidor para indicar que el sorteo aún no se ha realizado y el cliente debe esperar.
+            * **Payload:** Vacío.
+        * **`WIN` (Winners):**
+            * **Propósito:** Enviado por el servidor con la lista final de ganadores para una agencia.
+            * **Payload:** Una lista de DNI ganadores, separados por comas. `"12345678","87654321"`.
 
-  - **Nuevo Tipo de Mensaje - `NMB` (No More Bets):**
-    - **Propósito:** Enviado por el cliente para notificar que ha terminado de enviar todas sus apuestas.
-    - **Payload:** Contiene un objeto que identifica a la agencia que finalizó, ej: `{"agency":"1"}`.
-  - **Payload Modificado - `BET`:**
-    - Ahora puede contener múltiples apuestas separadas por un punto y coma (`;`).
-    - **Ejemplo:** `BET[{"doc":"111",...};{"doc":"222",...}]`
-  - **Payload Modificado - `ACK`:**
-    - La respuesta a un mensaje `BET` ahora contiene la **cantidad** de apuestas procesadas en el lote. Ejemplo: `ACK[50]`.
-    - La respuesta a un mensaje `NMB` es una confirmación. Ejemplo: `ACK[NMB]`.
-
-- **Ejemplo de Interacción (Ejercicio 6):**
-  1.  **Cliente -> Servidor (Lote 1):** `BET[{"doc":"111",...};{"doc":"222",...}]`
-  2.  **Servidor -> Cliente:** `ACK[2]`
-  3.  **Cliente -> Servidor (Lote 2):** `BET[{"doc":"333",...};{"doc":"444",...}]`
-  4.  **Servidor -> Cliente:** `ACK[2]`
-  5.  **Cliente -> Servidor (Fin):** `NMB[{"agency":"1"}]`
-  6.  **Servidor -> Cliente:** `ACK[NMB]`
+* **Ejemplo de Interacción Completa (Ej. 6 + 7):**
+    1.  **Cliente -> Servidor:** `BET[...lote...]`
+    2.  **Servidor -> Cliente:** `ACK[50]`
+    3.  **Cliente -> Servidor:** `NMB[{"agency":"1"}]`
+    4.  **Servidor -> Cliente:** `ACK[NMB]`
+    5.  *(El cliente cierra la conexión y entra en fase de polling)*
+    6.  **Cliente -> Servidor (Nueva Conexión):** `ASK[{"agency":"1"}]`
+    7.  **Servidor -> Cliente:** `WIT[]`
+    8.  *(Cliente espera N segundos y crea otra conexión)*
+    9.  **Cliente -> Servidor (Nueva Conexión):** `ASK[{"agency":"1"}]`
+    10. **Servidor -> Cliente:** `WIN["11122233","44455566"]`
