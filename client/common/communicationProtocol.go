@@ -8,10 +8,10 @@ import (
 const (
 	MESSAGE_TYPE_LENGTH = 3
 
+	ASK_FOR_WINNERS_MSG_TYPE = "ASK"
 	BET_MSG_TYPE             = "BET"
 	NO_MORE_BETS_MSG_TYPE    = "NMB"
 	ACK_MSG_TYPE             = "ACK"
-	ASK_FOR_WINNERS_MSG_TYPE = "ASK"
 	WAIT_MSG_TYPE            = "WIT"
 	WINNERS_MSG_TYPE         = "WIN"
 
@@ -79,13 +79,24 @@ func EncodeAskForWinnersMessage(agency string) string {
 
 // ============================= DECODE ============================== //
 
-func GetMessageType(message string) string {
-	return message[0:MESSAGE_TYPE_LENGTH]
+func DecodeMessageType(message string) (string, error) {
+	if len(message) < MESSAGE_TYPE_LENGTH {
+		return "", fmt.Errorf("message too short to contain message type")
+	}
+	return message[0:MESSAGE_TYPE_LENGTH], nil
 }
 
-func assertMessageFormat(message string, expectedType string) error {
-	if !strings.HasPrefix(message, expectedType+START_MSG_DELIMITER) || !strings.HasSuffix(message, END_MSG_DELIMITER) {
-		log.Errorf("action: assert_message_format | result: fail | error: invalid format")
+func assertMessageFormat(message string, expectedMessageType string) error {
+	receivedMessageType, err := DecodeMessageType(message)
+	if err != nil {
+		return err
+	}
+
+	if receivedMessageType != expectedMessageType {
+		return fmt.Errorf("unexpected message type: expected %s but received %s", expectedMessageType, receivedMessageType)
+	}
+
+	if !strings.HasPrefix(message, expectedMessageType+START_MSG_DELIMITER) || !strings.HasSuffix(message, END_MSG_DELIMITER) {
 		return fmt.Errorf("unexpected message format")
 	}
 	return nil
@@ -107,6 +118,7 @@ func DecodeWinnersMessage(message string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	payload := getMessagePayload(message)
 	if payload == "" {
 		return []string{}, nil

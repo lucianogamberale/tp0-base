@@ -3,20 +3,24 @@ package common
 const (
 	KiB = 1024
 
-	// Maximum size of a Bet in bytes:
+	// MAX_BYTES_BET defines the upper bound (in bytes) for the serialized
+	// representation of a single Bet. While the raw data of a bet is ~135 bytes
+	// (agency + first_name + last_name + document + birthdate + number),
+	// we set a conservative limit of 256 bytes (1/4 KiB).
 	//
-	// agency (5 bytes) +
-	// first_name (50 bytes) +
-	// last_name (50 bytes) +
-	// document (10 bytes) +
-	// birthdate (10 bytes) +
-	// number (10 bytes) = 135 bytes
+	// This margin accounts for:
+	//   - field names (e.g. "first_name=")
+	//   - delimiters
+	//   - protocol header overhead
 	//
-	// We set a limit of 256 bytes to be sure, considering header and each field name too
+	// By enforcing this size, we can:
+	//   - validate message integrity
+	//   - prevent malformed/oversized inputs
+	//   - simplify chunk allocation when streaming bets (e.g. from CSV)
+	//
+	// Assumption: a new bet will only be read if there are at least
+	// MAX_BYTES_BET free bytes available in the buffer.
 	MAX_BYTES_BET = KiB / 4
-
-	// We will assume that should be at least MAX_BYTES_BET bytes free into the chunk
-	// to read a new Bet from csv file
 )
 
 type Bet struct {
