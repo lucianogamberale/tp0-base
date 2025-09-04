@@ -8,10 +8,10 @@ import (
 const (
 	MESSAGE_TYPE_LENGTH = 3
 
-	ASK_FOR_WINNERS_MSG_TYPE = "ASK"
+	ACK_MSG_TYPE             = "ACK"
 	BET_MSG_TYPE             = "BET"
 	NO_MORE_BETS_MSG_TYPE    = "NMB"
-	ACK_MSG_TYPE             = "ACK"
+	ASK_FOR_WINNERS_MSG_TYPE = "ASK"
 	WINNERS_MSG_TYPE         = "WIN"
 
 	START_MSG_DELIMITER = "["
