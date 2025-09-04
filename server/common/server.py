@@ -214,7 +214,7 @@ class Server:
 
         self.__set_server_as_running()
         try:
-            while self._server_running and not self.__all_agencies_finished():
+            while self.__is_running() and not self.__all_agencies_finished():
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
