@@ -55,7 +55,7 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
   - **Servidor**: Se mapea el archivo local `./server/config.ini` al archivo `/config.ini` dentro del contenedor del servidor.
   - **Cliente**: Se mapea `./client/config.yaml` al archivo `/config.yaml` dentro de cada contenedor de cliente.
 
-  Adicionalmente, se configuraron los volúmenes como read_only: true. Esto es una buena práctica de seguridad que asegura que las aplicaciones dentro de los contenedores puedan leer la configuración, pero no puedan modificar accidentalmente los archivos originales en la máquina host.
+  Adicionalmente, se configuraron los volúmenes como `read_only: true`. Esto es una buena práctica de seguridad que asegura que las aplicaciones dentro de los contenedores puedan leer la configuración, pero no puedan modificar accidentalmente los archivos originales en la máquina host.
 
   De esta manera, la configuración queda desacoplada de la imagen. La imagen contiene la aplicación, pero los datos de configuración se "inyectan" en tiempo de ejecución desde el exterior.
 
