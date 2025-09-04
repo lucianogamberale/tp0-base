@@ -107,3 +107,107 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
       ./validar-echo-server.sh
       ```
   4.  El script se encargará de construir la imagen de prueba, ejecutar el test y mostrar el resultado `action: test_echo_server | result: success` en la consola.
+
+### Ejercicio 4: Graceful Shutdown
+
+- **Objetivo:** Modificar el cliente y el servidor para que ambos manejen la señal `SIGTERM` y terminen de forma ordenada. Un cierre _graceful_ implica liberar todos los recursos adquiridos, como sockets y archivos, antes de que el proceso principal finalice.
+
+- **Implementación (Cliente - Go):**
+  La gestión de señales en el cliente se implementó utilizando un channel que sirve de buzón para recibir señales de `SIGTERM`.
+
+  1.  **Canal de Señales:** Se crea un canal (`make(chan os.Signal, 1)`) que actúa como un buzón para recibir notificaciones de señales enviadas por el sistema operativo.
+
+  2.  **Registro de Señal:** Usando `signal.Notify(channel, syscall.SIGTERM)`, se le indica al runtime de Go que debe enviar una notificación al canal cada vez que el proceso reciba la señal `SIGTERM`.
+
+  3.  **Manejo Asíncrono con `select`:** El bucle principal del cliente, que se encarga de enviar mensajes periódicamente, se modificó para usar una sentencia `select`. En cada iteración, el `select` permite al programa esperar por dos eventos de forma no bloqueante:
+
+      - **Caso 1 (Señal Recibida):** Si llega un mensaje al canal de señales, significa que se recibió `SIGTERM`. En este caso, se ejecuta la función de limpieza `sigtermSignalHandler()` y se termina el bucle principal, finalizando el programa de forma controlada.
+      - **Caso 2 (`default`):** Si no hay ninguna señal pendiente, se ejecuta el bloque `default`, que contiene la lógica normal de crear un socket, enviar un mensaje y esperar el período de tiempo configurado.
+
+  4.  **Lógica de Limpieza (`sigtermSignalHandler`):** Esta función se encarga de la limpieza de recursos. Su responsabilidad es verificar si existe una conexión de red activa (`client.conn != nil`) y, de ser así, cerrarla explícitamente con `client.conn.Close()`. Además, se utiliza el comando `defer` para asegurarnos de que siempre se cierre el canal de señales y también la conexión con el cliente.
+
+  Este diseño asegura que si se ejecuta un `docker compose down` (que envía `SIGTERM` a los contenedores), el cliente lo interceptará, cerrará su socket de red y terminará limpiamente.
+
+- **Implementación (Servidor - Python):**
+  El manejo de la señal `SIGTERM` en el servidor se realizó utilizando el módulo nativo `signal` de Python.
+
+  1.  **Registro del Manejador:** En el constructor de la clase `Server`, se registra un manejador (`__sigterm_signal_handler`) para la señal `SIGTERM` mediante la llamada `signal.signal(signal.SIGTERM, ...)`.
+
+  2.  **Flag de Control:** La clase utiliza una variable booleana interna (`self._server_running`) que actúa como un _flag_ para controlar la ejecución del bucle principal en el método `run()`.
+
+  3.  **Lógica del Manejador (`__sigterm_signal_handler`):** Cuando el sistema operativo envía la señal `SIGTERM`, se invoca este método, que realiza dos acciones clave en secuencia:
+      - Primero, cambia el estado del _flag_ `_server_running` a `False`. Esto asegura que, una vez que el bucle principal termine su iteración actual, no comience una nueva.
+      - Segundo, y más importante, cierra el socket principal del servidor (`self._server_socket.close()`). Esta acción es fundamental porque el bucle principal está bloqueado en la llamada `self._server_socket.accept()`. Al cerrar el socket desde el manejador de la señal, la llamada `accept()` falla inmediatamente, levantando una `OSError`. Esto **desbloquea el hilo principal** y le permite re-evaluar la condición del bucle `while`, que ahora es `False`, llevando a una terminación controlada del servidor.
+
+  Esta combinación de un _flag_ de estado y el cierre forzado del socket para interrumpir una llamada bloqueante es un patrón robusto y efectivo para lograr un apagado _graceful_ en servidores de red.
+
+- **Ejecución:**
+
+  1.  Posicionarse en la rama: `git checkout ej4`
+
+  2.  Levantar los servicios:
+
+      ```bash
+      make docker-compose-up
+      ```
+
+  3.  Mientras los servicios corren, detenerlos con el comando de make:
+
+      ```bash
+      make docker-compose-down
+      ```
+
+  4.  Revisar los logs con `make docker-compose-logs`. Se deberán observar los mensajes de log definidos en los manejadores de señales tanto del cliente (`action: sigterm_signal_handler`) como del servidor, indicando que los recursos se cerraron correctamente antes de que los contenedores se detuvieran. Output de ejemplo:
+
+      ```bash
+      client1  | 2025-09-04 17:42:55 INFO     action: config | result: success | client_id: 1 | server_address: server:12345 | loop_amount: 5 | loop_period: 5s | log_level: DEBUG
+      client1  | 2025-09-04 17:42:55 INFO     action: receive_message | result: success | client_id: 1 | msg: [CLIENT 1] Message N°1
+      server   | 2025-09-04 17:42:55 DEBUG    action: config | result: success | port: 12345 | listen_backlog: 5 | logging_level: DEBUG
+      server   | 2025-09-04 17:42:55 INFO     action: server_startup | result: success
+      server   | 2025-09-04 17:42:55 INFO     action: accept_connections | result: in_progress
+      server   | 2025-09-04 17:42:55 INFO     action: accept_connections | result: success | ip: 172.25.125.3
+      server   | 2025-09-04 17:42:55 INFO     action: receive_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°1
+      server   | 2025-09-04 17:42:55 INFO     action: send_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°1
+      server   | 2025-09-04 17:42:55 DEBUG    action: client_connection_close | result: success
+      server   | 2025-09-04 17:42:55 INFO     action: accept_connections | result: in_progress
+      client1  | 2025-09-04 17:43:00 DEBUG     action: client_connection_close | result: success | client_id: 1
+      server   | 2025-09-04 17:43:00 INFO     action: accept_connections | result: success | ip: 172.25.125.3
+      server   | 2025-09-04 17:43:00 INFO     action: receive_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°2
+      server   | 2025-09-04 17:43:00 INFO     action: send_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°2
+      client1  | 2025-09-04 17:43:00 INFO     action: receive_message | result: success | client_id: 1 | msg: [CLIENT 1] Message N°2
+      server   | 2025-09-04 17:43:00 DEBUG    action: client_connection_close | result: success
+      server   | 2025-09-04 17:43:00 INFO     action: accept_connections | result: in_progress
+      server   | 2025-09-04 17:43:05 INFO     action: accept_connections | result: success | ip: 172.25.125.3
+      server   | 2025-09-04 17:43:05 INFO     action: receive_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°3
+      client1  | 2025-09-04 17:43:05 DEBUG     action: client_connection_close | result: success | client_id: 1
+      client1  | 2025-09-04 17:43:05 INFO     action: receive_message | result: success | client_id: 1 | msg: [CLIENT 1] Message N°3
+      server   | 2025-09-04 17:43:05 INFO     action: send_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°3
+      server   | 2025-09-04 17:43:05 DEBUG    action: client_connection_close | result: success
+      server   | 2025-09-04 17:43:05 INFO     action: accept_connections | result: in_progress
+      client1  | 2025-09-04 17:43:10 DEBUG     action: client_connection_close | result: success | client_id: 1
+      server   | 2025-09-04 17:43:10 INFO     action: accept_connections | result: success | ip: 172.25.125.3
+      server   | 2025-09-04 17:43:10 INFO     action: receive_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°4
+      server   | 2025-09-04 17:43:10 INFO     action: send_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°4
+      client1  | 2025-09-04 17:43:10 INFO     action: receive_message | result: success | client_id: 1 | msg: [CLIENT 1] Message N°4
+      server   | 2025-09-04 17:43:10 DEBUG    action: client_connection_close | result: success
+      server   | 2025-09-04 17:43:10 INFO     action: accept_connections | result: in_progress
+      client1  | 2025-09-04 17:43:15 DEBUG     action: client_connection_close | result: success | client_id: 1
+      server   | 2025-09-04 17:43:15 INFO     action: accept_connections | result: success | ip: 172.25.125.3
+      server   | 2025-09-04 17:43:15 INFO     action: receive_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°5
+      client1  | 2025-09-04 17:43:15 INFO     action: receive_message | result: success | client_id: 1 | msg: [CLIENT 1] Message N°5
+      server   | 2025-09-04 17:43:15 INFO     action: send_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°5
+      server   | 2025-09-04 17:43:15 DEBUG    action: client_connection_close | result: success
+      server   | 2025-09-04 17:43:15 INFO     action: accept_connections | result: in_progress
+      client1  | 2025-09-04 17:43:20 DEBUG     action: client_connection_close | result: success | client_id: 1
+      client1  | 2025-09-04 17:43:20 INFO     action: loop_finished | result: success | client_id: 1
+      client1  | 2025-09-04 17:43:20 DEBUG     action: signal_channel_close | result: success | client_id: 1
+      client1  | 2025-09-04 17:43:20 INFO     action: exit | result: success | client_id: 1
+      client1 exited with code 0
+      server   | 2025-09-04 17:43:41 INFO     action: sigterm_signal_handler | result: in_progress
+      server   | 2025-09-04 17:43:41 DEBUG    action: sigterm_server_socket_close | result: success
+      server   | 2025-09-04 17:43:41 INFO     action: sigterm_signal_handler | result: success
+      server   | 2025-09-04 17:43:41 ERROR    action: accept_connections | result: fail | error: [Errno 9] Bad file descriptor
+      server   | 2025-09-04 17:43:41 DEBUG    action: server_socker_close | result: success
+      server   | 2025-09-04 17:43:41 INFO     action: server_shutdown | result: success
+      server   | 2025-09-04 17:43:41 INFO     action: exit | result: success
+      ```
