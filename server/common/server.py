@@ -7,17 +7,11 @@ from typing import Optional
 from common import utils, communication_protocol
 
 
-def handle_thread_exeptions(args):
-    logging.error(f"action: thread_exception | result: fail | error: {args.exc_value}")
-    raise args.exc_value
-
-
 class Server:
 
     # ============================== INITIALIZE ============================== #
 
     def __init__(self, port, listen_backlog, number_of_agencies: int) -> None:
-        # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(("", port))
         self._server_socket.listen(listen_backlog)
@@ -25,14 +19,12 @@ class Server:
         self._number_of_agencies = number_of_agencies
 
         self._server_running = threading.Event()
-        self.__set_server_as_not_running()
-        signal.signal(signal.SIGTERM, self.__sigterm_signal_handler)
-
-        self._agencies_information = {}
 
         self._spawned_threads: list[threading.Thread] = []
-        threading.excepthook = handle_thread_exeptions
         self._draw_barrier = threading.Barrier(number_of_agencies)
+        self._was_draw_held = threading.Event()
+
+        signal.signal(signal.SIGTERM, self.__sigterm_signal_handler)
 
     # ============================== PRIVATE - ACCESSING ============================== #
 
@@ -123,23 +115,23 @@ class Server:
 
     # ============================== PRIVATE - AGENCIES INFORMATION ============================== #
 
-    def __all_winners_sent(self) -> bool:
-        return (
-            self._draw_barrier.broken
-            or self._draw_barrier.n_waiting == self._number_of_agencies
-        )
+    def __was_draw_held(self) -> bool:
+        return self._was_draw_held.is_set()
+
+    def __set_draw_as_held(self) -> None:
+        self._was_draw_held.set()
 
     # ============================== PRIVATE - SEND ACK ============================== #
 
     def __send_ack_message(
         self, client_connection: socket.socket, message: str, logging_action: str
     ) -> None:
-        logging.info(f"action: {logging_action} | result: in_progress")
+        logging.debug(f"action: {logging_action} | result: in_progress")
 
         message = communication_protocol.encode_ack_message(message)
         self.__send_message(client_connection, message)
 
-        logging.info(f"action: {logging_action} | result: success")
+        logging.debug(f"action: {logging_action} | result: success")
 
     # ============================== PRIVATE - HANDLE BET BATCH ============================== #
 
@@ -155,22 +147,22 @@ class Server:
     ) -> None:
         bet_batch = []
         try:
-            logging.info(f"action: receive_bet_batch | result: in_progress")
-            bet_batch = communication_protocol.decode_bet_batch_message(message)
-            logging.info(f"action: receive_bet_batch | result: success")
+            logging.info(f"action: handle_bet_batch_message | result: in_progress")
 
+            bet_batch = communication_protocol.decode_bet_batch_message(message)
             if len(bet_batch) == 0:
                 raise ValueError("Empty bet batch received")
-
             utils.store_bets(bet_batch)
             self.__send_bet_batch_ack(client_connection, len(bet_batch))
             logging.info(
                 f"action: apuesta_recibida | result: success | cantidad: {len(bet_batch)}"
             )
+
+            logging.info(f"action: handle_bet_batch_message | result: success")
         except Exception as e:
             self.__send_bet_batch_ack(client_connection, 0)
-            logging.info(
-                f"action: apuesta_recibida | result: fail | cantidad: {len(bet_batch)}"
+            logging.error(
+                f"action: handle_bet_batch_message | result: fail | error: {e}"
             )
             raise e
 
@@ -179,19 +171,24 @@ class Server:
     def __handle_no_more_bets_message(
         self, client_connection: socket.socket, message: str
     ) -> None:
-        logging.info(f"action: receive_no_more_bets | result: in_progress")
-        communication_protocol.decode_no_more_bets_message(message)
-        logging.info(f"action: receive_no_more_bets | result: success")
+        logging.info(f"action: handle_no_more_bets_message | result: in_progress")
 
+        communication_protocol.decode_no_more_bets_message(message)
         self.__send_ack_message(
             client_connection,
             communication_protocol.NO_MORE_BETS_MSG_TYPE,
             "ack_no_more_bets",
         )
 
+        logging.info(f"action: handle_no_more_bets_message | result: success")
+
     # ============================== PRIVATE - HANDLE ASK FOR WINNERS ============================== #
 
     def __send_winners(self, client_connection: socket.socket, agency: int) -> None:
+        logging.debug(
+            f"action: send_winners | result: in_progress | agency: {agency}",
+        )
+
         winners = [
             bet
             for bet in utils.load_bets()
@@ -199,21 +196,25 @@ class Server:
         ]
         message = communication_protocol.encode_winners_message(winners)
         self.__send_message(client_connection, message)
-        logging.info(
+
+        logging.debug(
             f"action: send_winners | result: success | agency: {agency} | winners: {len(winners)}",
         )
 
     def __handle_ask_for_winners(
         self, client_connection: socket.socket, message: str
     ) -> None:
-        logging.info(f"action: receive_ask_for_winners | result: in_progress")
+        logging.info(f"action: handle_ask_for_winners | result: in_progress")
+
         agency = communication_protocol.decode_ask_for_winners_message(message)
-        logging.info(f"action: receive_ask_for_winners | result: success")
 
         if self._draw_barrier.wait() == 0:
+            self.__set_draw_as_held()
             logging.info("action: sorteo | result: success")
 
         self.__send_winners(client_connection, agency)
+
+        logging.info(f"action: handle_ask_for_winners | result: success")
 
     # ============================== PRIVATE - HANDLE CONNECTION ============================== #
 
@@ -225,7 +226,7 @@ class Server:
         client socket will also be closed
         """
 
-        while self.__is_running() and not self.__all_winners_sent():
+        while self.__is_running() and not self.__was_draw_held():
             message = self.__receive_message(client_connection)
 
             if message.startswith(communication_protocol.BET_MSG_TYPE):
@@ -239,6 +240,8 @@ class Server:
                 raise ValueError(
                     f'Invalid message type received from client "{communication_protocol.decode_message_type(message)}"'
                 )
+
+    # ============================== PRIVATE - HANDLE THREADS ============================== #
 
     def __handle_client_connection_thread_target(
         self, client_connection: socket.socket
@@ -260,23 +263,24 @@ class Server:
             client_connection.close()
             logging.debug("action: client_connection_close | result: success")
 
-    # ============================== PRIVATE - HANDLE THREADS ============================== #
-
     def __handle_client_connection_using_a_thread(
         self, client_connection: socket.socket
     ) -> None:
+        logging.debug("action: client_connection_thread_start | result: in_progress")
+
         thread = threading.Thread(
             target=self.__handle_client_connection_thread_target,
             args=(client_connection,),
         )
         self._spawned_threads.append(thread)
         thread.start()
-        logging.debug("action: handle_client_connection_thread_start | result: success")
+
+        logging.debug("action: client_connection_thread_start | result: success")
 
     def __join_all_threads(self) -> None:
         for thread in self._spawned_threads:
             thread.join()
-        logging.debug("action: thread_join | result: success")
+        logging.debug("action: all_thread_join | result: success")
 
     # ============================== PUBLIC ============================== #
 
@@ -290,15 +294,17 @@ class Server:
         """
         logging.info("action: server_startup | result: success")
 
+        connected_clients = 0
         self.__set_server_as_running()
         try:
-            while self.__is_running() and not self.__all_winners_sent():
+            while self.__is_running() and connected_clients < self._number_of_agencies:
                 client_connection = self.__accept_new_connection()
                 if client_connection is None:
                     continue
 
                 try:
                     self.__handle_client_connection_using_a_thread(client_connection)
+                    connected_clients += 1
                 except Exception as e:
                     client_connection.close()
                     logging.debug("action: client_connection_close | result: success")
