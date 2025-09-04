@@ -255,27 +255,77 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
   2.  Levantar los servicios: `make docker-compose-up`.
   3.  Observar los logs (`make docker-compose-logs`). Se verá la secuencia de logs `apuesta_enviada` de cada cliente, seguida de su correspondiente `apuesta_almacenada` en el servidor. Una vez que el servidor procese las 5 apuestas, finalizará su ejecución.
 
+### Ejercicio 6: Procesamiento por Lotes (Batches)
+
+- **Objetivo:** Modificar el cliente para que lea las apuestas desde un archivo `.csv`, las agrupe en lotes (_batches_) de tamaño configurable y las envíe en una única transacción al servidor. El tamaño de cada lote está limitado tanto por cantidad de apuestas como por tamaño total en KiB.
+
+- **Implementación (Cliente - Go):**
+  El cliente fue reestructurado para funcionar como un procesador de archivos, leyendo datos de un `.csv` y enviándolos eficientemente en lotes.
+
+  1.  **Ingestión de Datos desde CSV:** La lógica ahora se centra en leer el archivo `agency-N.csv` correspondiente a cada cliente. Se utiliza el paquete `encoding/csv` de Go para parsear el archivo de manera robusta. El archivo se inyecta en el contenedor mediante **`docker volumes`** y leido de a lotes.
+
+  2.  **Lógica de Creación de Lotes:** El corazón de esta implementación es la función `readBetBatchFromCsvUsing`. Al construir un lote, se aplica una **doble condición de corte** para asegurar la eficiencia y el cumplimiento de los límites:
+
+      - **Límite de Cantidad:** El lote no puede superar el `MaxAmountOfBetsOnEachBatch` definido en la configuración.
+      - **Límite de Tamaño:** Antes de añadir una nueva apuesta al lote, se calcula el tamaño que tendría el mensaje final serializado y se verifica que no exceda el `MaxKiBPerBatch` configurado.
+
+  3.  **Serialización de Lotes:** Se modificó el protocolo para que el `PAYLOAD` de un mensaje `BET` pueda contener múltiples apuestas. La función `EncodeBetBatchMessage` se encarga de serializar cada apuesta del lote y unirlas con un separador (`;`).
+
+  4.  **ACK por Lote:** El mecanismo de confirmación (`ACK`) fue mejorado. Ahora, tras enviar un lote, el cliente espera que el servidor responda con un `ACK` cuyo `PAYLOAD` sea la **cantidad de apuestas procesadas** en ese lote (ej: `ACK[50]`).
+
+  5.  **Notificación de Finalización:** Se introdujo un nuevo tipo de mensaje, `NMB` (No More Bets). Una vez que el cliente ha leído y enviado todas las apuestas de su archivo `.csv`, envía este mensaje final al servidor para notificar que ha completado su trabajo.
+
+- **Implementación (Servidor - Python):**
+  El servidor fue adaptado para procesar lotes de apuestas, manteniendo una conexión persistente con cada cliente durante toda su sesión de envío.
+
+  1.  **Conexiones Persistentes:** A diferencia del ejercicio anterior, el servidor ahora mantiene la conexión con un cliente activa. El método `__handle_client_connection` fue refactorizado con un bucle `while` que procesa múltiples mensajes de un mismo cliente hasta recibir la señal de finalización.
+
+  2.  **Enrutamiento de Mensajes:** Dentro del bucle de conexión, el servidor actúa como un enrutador simple. Inspecciona el tipo de mensaje (`BET` o `NMB`) y lo delega a la función manejadora correspondiente (`__handle_bet_batch_message` o `__handle_no_more_bets_message`).
+
+  3.  **Deserialización de Lotes:** Al recibir un mensaje `BET`, el servidor utiliza la función `decode_bet_batch_message` para deserializar el `PAYLOAD`. Esta función divide el `PAYLOAD` por el separador (`;`) y reconstruye una lista de objetos `Bet`.
+
+  4.  **Almacenamiento y Confirmación de Lotes:** El servidor invoca `utils.store_bets()` una sola vez con la lista completa de apuestas del lote. Luego, envía al cliente el `ACK` correspondiente, conteniendo la cantidad de apuestas procesadas (ej: `ACK[50]`). En caso de error, responde con `ACK[0]`.
+
+  5.  **Manejo de Finalización:** Al recibir el mensaje `NMB`, el servidor responde con un `ACK[NMB]` y aumenta su contador interno de agencias finalizadas. Este contador le permite saber cuándo todas las agencias han terminado para poder cerrar su propia ejecución.
+
+- **Ejecución:**
+  1.  Posicionarse en la rama: `git checkout ej6`.
+  2.  El `docker-compose.yaml` (generado por el script) debe usar **volúmenes** para mapear los archivos `.data/agency-{N}.csv` al interior de cada contenedor de cliente.
+  3.  Levantar los servicios: `make docker-compose-up`.
+  4.  En los logs (`make docker-compose-logs`) se observará cómo los clientes leen y envían lotes de apuestas, y el servidor confirma cada lote con el log `action: apuesta_recibida`. Finalmente, los clientes enviarán la notificación de finalización y el servidor se apagará.
+
 ---
 
 ## Aspectos de Diseño
 
 ### Protocolo de Comunicación
 
-Para este trabajo práctico se diseñó e implementó un protocolo de comunicación basado en el intercambio de mensajes con una estructura definida.
+El protocolo de comunicación evoluciona para soportar el envío de lotes y la señalización de fin de transmisión.
 
 - **Formato General del Mensaje:**
-  Todos los mensajes siguen la estructura `TIPO[PAYLOAD]`, donde:
-
-  - **`TIPO`**: Un string de 3 caracteres que identifica la naturaleza del mensaje (ej: `BET`, `ACK`).
-  - **`PAYLOAD`**: El contenido del mensaje, delimitado por corchetes `[]`.
+  `TIPO[PAYLOAD]`
 
 - **Tipos de Mensajes (Ejercicio 5):**
 
-  - **`BET`**: Mensaje enviado por el cliente para registrar una o más apuestas.
-    - **Payload:** Una o más apuestas serializadas. Para una única apuesta, el formato es `{"agency":"<valor>","first_name":"<valor>",...}`.
-  - **`ACK`**: Mensaje enviado por el servidor para confirmar la recepción y procesamiento exitoso de un mensaje previo.
-    - **Payload:** Generalmente un número que indica la cantidad de items procesados. Para este ejercicio, es `1`.
+  - **`BET`**: Para una única apuesta. `PAYLOAD`: `{"campo":"valor",...}`.
+  - **`ACK`**: Confirmación simple. `PAYLOAD`: `1`. Debido a que solo se recibía una apuesta.
 
-- **Ejemplo de Interacción:**
-  1.  **Cliente -> Servidor:** `BET[{"agency":"1","first_name":"Luciano",...}]`
-  2.  **Servidor -> Cliente:** `ACK[1]`
+- **Evolución para el Ejercicio 6:**
+
+  - **Nuevo Tipo de Mensaje - `NMB` (No More Bets):**
+    - **Propósito:** Enviado por el cliente para notificar que ha terminado de enviar todas sus apuestas.
+    - **Payload:** Contiene un objeto que identifica a la agencia que finalizó, ej: `{"agency":"1"}`.
+  - **Payload Modificado - `BET`:**
+    - Ahora puede contener múltiples apuestas separadas por un punto y coma (`;`).
+    - **Ejemplo:** `BET[{"doc":"111",...};{"doc":"222",...}]`
+  - **Payload Modificado - `ACK`:**
+    - La respuesta a un mensaje `BET` ahora contiene la **cantidad** de apuestas procesadas en el lote. Ejemplo: `ACK[50]`.
+    - La respuesta a un mensaje `NMB` es una confirmación. Ejemplo: `ACK[NMB]`.
+
+- **Ejemplo de Interacción (Ejercicio 6):**
+  1.  **Cliente -> Servidor (Lote 1):** `BET[{"doc":"111",...};{"doc":"222",...}]`
+  2.  **Servidor -> Cliente:** `ACK[2]`
+  3.  **Cliente -> Servidor (Lote 2):** `BET[{"doc":"333",...};{"doc":"444",...}]`
+  4.  **Servidor -> Cliente:** `ACK[2]`
+  5.  **Cliente -> Servidor (Fin):** `NMB[{"agency":"1"}]`
+  6.  **Servidor -> Cliente:** `ACK[NMB]`
