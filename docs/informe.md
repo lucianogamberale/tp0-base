@@ -71,3 +71,39 @@ Cada ejercicio se encuentra en su propia rama de Git. Para probar una solución 
   3.  Modificar un valor en `config/server/config.ini` en la máquina _host_.
 
   4.  Verificar dentro de del container correspondiente que se modificó el archivo. Para esto nos adentramos en el container `docker exec -it server sh` y realizar un `cat config.ini`.
+
+### Ejercicio 3: Script de Validación con Netcat
+
+- **Objetivo:** Crear un script `validar-echo-server.sh` para verificar que el servidor funciona correctamente como un _echo server_. La validación debe usar `netcat` desde dentro de la red de Docker, sin exponer puertos al _host_.
+
+- **Implementación:**
+  La solución adopta un enfoque de **"tester en un contenedor"**. En lugar de ejecutar `netcat` desde el _host_ o desde uno de los contenedores de cliente, se crea un entorno de prueba dedicado y efímero.
+
+  La implementación se divide en tres partes:
+
+  1.  **`Dockerfile` del Netcat Echo Server Tester:** Se creó un `Dockerfile` minimalista que utiliza `alpine` como imagen base. Alpine es una distribución de Linux extremadamente ligera que ya incluye `netcat` por defecto. Este Dockerfile simplemente copia y da permisos de ejecución al script que contiene la lógica de la prueba.
+
+  2.  **Script de Lógica (`netcat-echo-sv-test.sh`):** Este script es el que se ejecuta _dentro_ del contenedor de prueba. Su lógica es simple:
+
+      - Define un mensaje de prueba.
+      - Usa `netcat` (`nc`) para enviar ese mensaje al servidor, direccionándolo por su nombre de servicio en la red Docker (`server:12345`).
+      - Toma la respuesta del servidor.
+      - Compara la respuesta con el mensaje original y, según el resultado, imprime el log de `success` o `fail` requerido.
+
+  3.  **Script Orquestador (`validar-echo-server.sh`):** Este es el script principal que se ejecuta desde el _host_. Su función es orquestar todo el proceso de prueba:
+      - Primero, construye la imagen del tester usando el comando `docker build` con un tag parametrizable.
+      - Luego, ejecuta un contenedor temporal (`docker run --rm`) a partir de esa imagen. Este contendor se conecta a la red del proyecto (`--network=tp0_testing_net`), lo que le permite resolver el nombre `server` y comunicarse con él.
+      - Finalmente, se le indica al contenedor que ejecute el script de lógica (`sh -c "./$script_name"`).
+
+- **Ejecución:**
+  1.  Posicionarse en la rama: `git checkout ej3`
+  2.  Asegurarse de que el entorno principal esté funcionando:
+      ```bash
+      make docker-compose-up
+      ```
+  3.  En otra terminal, dar permisos de ejecución y correr el script de validación:
+      ```bash
+      chmod +x validar-echo-server.sh
+      ./validar-echo-server.sh
+      ```
+  4.  El script se encargará de construir la imagen de prueba, ejecutar el test y mostrar el resultado `action: test_echo_server | result: success` en la consola.
