@@ -24,6 +24,8 @@ class Server:
         self._draw_barrier = threading.Barrier(number_of_agencies)
         self._was_draw_held = threading.Event()
 
+        self._storage_access_lock = threading.Lock()
+
         signal.signal(signal.SIGTERM, self.__sigterm_signal_handler)
 
     # ============================== PRIVATE - ACCESSING ============================== #
@@ -152,7 +154,8 @@ class Server:
             bet_batch = communication_protocol.decode_bet_batch_message(message)
             if len(bet_batch) == 0:
                 raise ValueError("Empty bet batch received")
-            utils.store_bets(bet_batch)
+            with self._storage_access_lock:
+                utils.store_bets(bet_batch)
             self.__send_bet_batch_ack(client_connection, len(bet_batch))
             logging.info(
                 f"action: apuesta_recibida | result: success | cantidad: {len(bet_batch)}"
@@ -189,11 +192,12 @@ class Server:
             f"action: send_winners | result: in_progress | agency: {agency}",
         )
 
-        winners = [
-            bet
-            for bet in utils.load_bets()
-            if bet.agency == agency and utils.has_won(bet)
-        ]
+        with self._storage_access_lock:
+            winners = [
+                bet
+                for bet in utils.load_bets()
+                if bet.agency == agency and utils.has_won(bet)
+            ]
         message = communication_protocol.encode_winners_message(winners)
         self.__send_message(client_connection, message)
 
